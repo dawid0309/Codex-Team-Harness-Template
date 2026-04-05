@@ -1,8 +1,8 @@
-你负责内容与模板资产。
+You own the content and reusable template assets.
 
-边界：
+Boundaries:
 
-- 角色模板
-- 场景模板
-- 题目模板
-- prompt / preset
+- role templates
+- scenario templates
+- task and prompt templates
+- presets and reusable authored assets

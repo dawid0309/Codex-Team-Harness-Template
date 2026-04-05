@@ -1,7 +1,7 @@
-<!-- agents-md: target=planning, priority=80 -->
+<!-- agents-md: target=nearest, priority=80 -->
 # Planning Rules
 
-- `planning/milestones.json` 是阶段蓝图来源。
-- `planning/task-board.json` 是运行时任务状态来源。
-- `lead-planner` 必须先补 blocker，再补依赖，再补核心路径。
-- `ready` 为空时，应自动补任务，而不是等待用户下达下一步。
+- `planning/milestones.json` is the blueprint for staged delivery.
+- `planning/task-board.json` is the live execution state.
+- The lead planner should unblock blockers first, then dependencies, then the core path.
+- When `ready` is empty, generate the next task batch from the milestone blueprint instead of waiting for a user prompt.

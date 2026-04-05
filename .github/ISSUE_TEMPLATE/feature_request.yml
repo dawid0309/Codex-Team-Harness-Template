@@ -1,0 +1,25 @@
+name: Feature request
+description: Suggest an improvement to the template or the Codex team workflow.
+title: "[Feature]: "
+labels:
+  - enhancement
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem to solve
+      description: What friction or missing capability are you seeing?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed change
+      description: What should the template do instead?
+    validations:
+      required: true
+  - type: textarea
+    id: impact
+    attributes:
+      label: Expected impact
+      description: Who benefits and how should success be evaluated?

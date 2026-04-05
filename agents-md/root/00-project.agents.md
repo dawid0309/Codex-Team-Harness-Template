@@ -1,16 +1,16 @@
 <!-- agents-md: target=root, priority=100 -->
 # __PROJECT_NAME__ Codex Workbench
 
-这是项目主控上下文。
+This is the root operating context for the project.
 
-进入工作前必须读取：
+Before doing substantial work, read:
 
 1. `docs/architecture/system.md`
 2. `planning/milestones.json`
 3. `planning/task-board.json`
-4. 当前角色目录下的 `AGENTS.md`
+4. the nearest role-specific `AGENTS.md`
 
-当前默认技术方向：
+Default working assumptions:
 
 - Stack: `__STACK__`
-- Collaboration: single main thread + on-demand subagents
+- Collaboration mode: one main orchestrator thread plus on-demand subagents

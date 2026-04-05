@@ -1,11 +1,12 @@
 # Experiments
 
-所有实验路线都记录在这里。
+Record every meaningful experiment branch here so the team can learn from failed and successful variants instead of repeating them.
 
-每份记录至少包含：
+Each experiment note should include at least:
 
-- 对比目标
-- A/B 差异
-- 验证结果
-- 推荐结论
-- 是否合并
+- the question being tested
+- the branch or branches compared
+- what changed between variants
+- verification results
+- recommendation
+- whether the result should merge, archive, or be revisited later

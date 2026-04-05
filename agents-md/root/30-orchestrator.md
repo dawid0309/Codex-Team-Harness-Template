@@ -1,7 +1,7 @@
 <!-- agents-md: target=root, priority=80 -->
 # Orchestrator Loop
 
-- 主线程是总控台。
-- 每次用户给出高层目标后，先读 `planning/task-board.json`。
-- 先跑 `pnpm planner:refresh`，再根据 `pnpm planner:next` 决定下一批任务。
-- 任务完成后必须跑 `pnpm verify`。
+- Keep one main thread as the orchestrator.
+- After any high-level user goal, read `planning/task-board.json` first.
+- Run `pnpm planner:refresh`, then use `pnpm planner:next` to choose the next task.
+- Every completed task must pass `pnpm verify` before it counts as done.

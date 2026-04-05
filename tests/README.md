@@ -1,7 +1,10 @@
 # Tests
 
-这里放：
+Keep automated verification here.
 
-- planner 测试
-- 核心引擎测试
-- smoke / regression 测试
+Recommended layers:
+
+- planner and task-board logic tests
+- core engine tests
+- smoke and regression checks
+- fixture-based tests for prompts, templates, or content assets when relevant

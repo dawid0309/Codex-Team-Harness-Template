@@ -4,37 +4,58 @@
     "slug": "foundation",
     "order": 1,
     "title": "Harness Foundation",
-    "summary": "搭建上下文骨架、任务系统、验证链路与工作台规则。",
+    "summary": "Establish the shared agent context, task system, verification path, and repo operating rules.",
     "completionDefinition": [
-      "AGENTS 上下文可生成",
-      "planner 能补任务",
-      "verify 能跑通"
+      "AGENTS context can be generated from source fragments",
+      "The planner can refresh and recommend tasks",
+      "The verification gate completes successfully"
     ],
     "taskBlueprints": [
       {
         "id": "M1-T001",
-        "title": "组装 agents-md 上下文骨架",
+        "title": "Assemble the agents-md context skeleton",
         "milestone": "m1-foundation",
         "priority": "P0",
         "owner_role": "lead-planner",
         "dependencies": [],
-        "input_artifacts": ["docs/architecture/system.md"],
-        "expected_output": ["AGENTS 片段", "角色定义"],
-        "acceptance": ["根级与局部上下文清晰"],
-        "verification": ["pnpm compose:agents"],
+        "input_artifacts": [
+          "docs/architecture/system.md"
+        ],
+        "expected_output": [
+          "AGENTS fragments",
+          "role definitions"
+        ],
+        "acceptance": [
+          "Root and local context are clear and composable"
+        ],
+        "verification": [
+          "pnpm compose:agents"
+        ],
         "next_consumer": "builder-engine"
       },
       {
         "id": "M1-T002",
-        "title": "建立里程碑与任务板",
+        "title": "Create milestone and task-board orchestration",
         "milestone": "m1-foundation",
         "priority": "P0",
         "owner_role": "builder-engine",
-        "dependencies": ["M1-T001"],
-        "input_artifacts": ["planning/milestones.json"],
-        "expected_output": ["task-board.json", "planner 脚本"],
-        "acceptance": ["ready/backlog 状态可自动推进"],
-        "verification": ["pnpm planner:refresh", "pnpm smoke"],
+        "dependencies": [
+          "M1-T001"
+        ],
+        "input_artifacts": [
+          "planning/milestones.json"
+        ],
+        "expected_output": [
+          "task-board.json",
+          "planner scripts"
+        ],
+        "acceptance": [
+          "ready and backlog states can advance automatically"
+        ],
+        "verification": [
+          "pnpm planner:refresh",
+          "pnpm smoke"
+        ],
         "next_consumer": "verifier-reviewer"
       }
     ]
@@ -44,23 +65,31 @@
     "slug": "product-core",
     "order": 2,
     "title": "Product Core",
-    "summary": "进入项目真实功能开发。",
+    "summary": "Move from harness setup into the first real product capability slice.",
     "completionDefinition": [
-      "核心路径完成",
-      "关键验证存在"
+      "The core user path is implemented",
+      "Key verification coverage exists"
     ],
     "taskBlueprints": [
       {
         "id": "M2-T001",
-        "title": "实现第一个核心功能切片",
+        "title": "Implement the first core feature slice",
         "milestone": "m2-product-core",
         "priority": "P0",
         "owner_role": "builder-engine",
         "dependencies": [],
-        "input_artifacts": ["docs/architecture/system.md"],
-        "expected_output": ["最小功能切片"],
-        "acceptance": ["能端到端跑通一个最小用例"],
-        "verification": ["pnpm verify"],
+        "input_artifacts": [
+          "docs/architecture/system.md"
+        ],
+        "expected_output": [
+          "Minimum viable feature slice"
+        ],
+        "acceptance": [
+          "At least one end-to-end usable flow works"
+        ],
+        "verification": [
+          "pnpm verify"
+        ],
         "next_consumer": "verifier-reviewer"
       }
     ]

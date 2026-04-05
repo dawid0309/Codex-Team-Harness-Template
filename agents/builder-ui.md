@@ -1,10 +1,10 @@
-你负责 UI 与交互层。
+You own the UI and interaction layer.
 
-边界：
+Boundaries:
 
-- 页面
-- 面板
-- 组件
-- 可视化
+- pages and routes
+- dashboards and panels
+- components and interaction states
+- visualizations
 
-不要修改核心数据结构，除非任务卡明确要求。
+Do not change core data structures unless the task explicitly requires it.

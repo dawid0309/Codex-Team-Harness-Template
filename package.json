@@ -1,7 +1,30 @@
 {
   "name": "codex-team-harness-template",
   "version": "0.1.0",
+  "description": "Reusable Codex team harness template with agent context composition, milestone planning, and verification workflows.",
   "private": true,
+  "license": "MIT",
+  "packageManager": "pnpm@10.17.0",
+  "engines": {
+    "node": ">=20.0.0",
+    "pnpm": ">=10.0.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/dawid0309/Codex-Team-Harness-Template.git"
+  },
+  "bugs": {
+    "url": "https://github.com/dawid0309/Codex-Team-Harness-Template/issues"
+  },
+  "homepage": "https://github.com/dawid0309/Codex-Team-Harness-Template#readme",
+  "keywords": [
+    "codex",
+    "template",
+    "agents",
+    "planning",
+    "workflow",
+    "verification"
+  ],
   "scripts": {
     "compose:agents": "pnpm exec agents-md compose",
     "planner:refresh": "tsx scripts/lead-planner.ts refresh",
@@ -10,9 +33,11 @@
     "tasks:status": "tsx scripts/harness/tasks.ts status",
     "tasks:update": "tsx scripts/harness/tasks.ts update",
     "smoke": "tsx scripts/smoke.ts",
+    "typecheck": "tsc --project tsconfig.json",
     "verify": "powershell -ExecutionPolicy Bypass -File scripts/verify.ps1"
   },
   "devDependencies": {
+    "@types/node": "^22.14.1",
     "agents-md": "^1.1.0",
     "tsx": "^4.21.0",
     "typescript": "^5.9.3"

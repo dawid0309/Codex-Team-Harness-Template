@@ -1,8 +1,10 @@
 # Source Tree
 
-把你的真实产品代码放到这里。
+Put the real product code for the derived project here.
 
-建议：
+Suggested structure:
 
-- `src/app` 或等价 UI 目录负责页面与 API
-- `src/lib` 负责类型、数据加载、planner 逻辑和引擎逻辑
+- `src/app` or an equivalent UI entrypoint for pages, routes, and APIs
+- `src/lib` for shared domain types, helpers, and orchestration logic
+- `src/features` when you want larger slices grouped by business capability
+- `src/integrations` for third-party adapters and external system boundaries

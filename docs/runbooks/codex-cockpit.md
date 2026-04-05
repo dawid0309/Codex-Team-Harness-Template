@@ -1,19 +1,30 @@
 # Codex Cockpit Runbook
 
-## 你在 Codex 里的默认操作
+## Default Operator Prompts
 
-只保留一个主线程，优先使用这些高层命令：
+Keep one main Codex thread focused on orchestration. Useful high-level prompts include:
 
-- `继续推进当前里程碑`
-- `为这个功能开一个实验路线对比`
-- `总结当前所有实验分支的结论`
-- `把已验证的任务整理成里程碑提交`
+- `Continue the current milestone`
+- `Pick the highest-value ready task and implement it`
+- `Open an experiment branch for this feature`
+- `Summarize verified progress and propose the next slice`
 
-## 主线程固定动作
+## Standard Main-Thread Loop
 
-1. 读 `AGENTS.md`
-2. 跑 `pnpm planner:refresh`
-3. 读 `planning/task-board.json`
-4. 选择下一批 `ready` 任务
-5. 完成后跑 `pnpm verify`
-6. 回写状态
+1. Read `AGENTS.md`.
+2. Run `pnpm planner:refresh`.
+3. Review `planning/task-board.json`.
+4. Pick the next `ready` task with the highest value and lowest dependency risk.
+5. Implement only within the subsystem boundary described by the task.
+6. Run `pnpm verify`.
+7. Update task state, handoff notes, and any review or decision records.
+
+## When To Pause
+
+Pause and ask for human input only when:
+
+- the request would expand or change the MVP boundary
+- a core architecture decision must change
+- a new costly external dependency is required
+- the same path has failed repeatedly without new evidence
+- deployment, permissions, compliance, or secret management blocks progress

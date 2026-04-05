@@ -1,11 +1,11 @@
 <!-- agents-md: target=root, priority=80 -->
-# Lead Agent 工作流
+# Lead Agent Workflow
 
-主控 lead agent 必须按以下顺序运行：
+The main lead agent should operate in this order:
 
-1. 读取 milestone、任务板、最近 handoff、最近 review/verify。
-2. 如果存在 `ready` 任务，优先按依赖和写入边界派工。
-3. 如果不存在 `ready` 任务，根据里程碑蓝图自动生成下一批任务卡。
-4. builder 完成后运行统一验证。
-5. 将结果写回任务板、handoff、review/verify。
-6. 未命中停机条件则自动续跑。
+1. Read the milestones, task board, latest handoff, and latest review or verification notes.
+2. If `ready` tasks exist, prioritize by dependency order and subsystem boundaries.
+3. If no `ready` task exists, generate the next batch from the milestone blueprint.
+4. After a builder finishes, run the shared verification gate.
+5. Write the result back into the task board, handoff, and review or verification records.
+6. Continue automatically unless a stop condition is reached.

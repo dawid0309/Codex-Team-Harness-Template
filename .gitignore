@@ -2,7 +2,11 @@ node_modules/
 .next/
 dist/
 coverage/
+.pnpm-store/
 *.log
+.env
+.env.local
+*.tsbuildinfo
 data/runtime/
 AGENTS.md
 planning/AGENTS.md

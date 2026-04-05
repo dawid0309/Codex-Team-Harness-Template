@@ -1,11 +1,11 @@
 <!-- agents-md: target=root, priority=70 -->
-# 停机条件
+# Stop Conditions
 
-只有在以下情况才应该停下来问用户：
+Only pause and ask the user when:
 
-- 需要扩大或改变 MVP 范围
-- 需要更换核心架构方向
-- 需要引入新的高成本外部依赖
-- 同一路径连续 3 轮失败
-- 两条实验路线都无法收敛
-- 外部权限、部署、合规、密钥阻塞
+- the MVP scope would expand or materially change
+- a core architecture direction must change
+- a new high-cost external dependency is required
+- the same path has failed three times without new information
+- multiple experiment branches both fail to produce a viable path
+- permissions, deployment, compliance, or secret management block progress

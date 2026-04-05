@@ -41,6 +41,7 @@ function isDone(status: TaskStatus) {
 function refreshBoard(taskBoard: TaskBoard, milestones: Milestone[]) {
   const sorted = [...milestones].sort((a, b) => a.order - b.order);
   let activeId = taskBoard.currentMilestoneId ?? sorted[0]?.id;
+  let didChange = false;
 
   for (const milestone of sorted) {
     const existing = taskBoard.tasks.filter((task) => task.milestone === milestone.id);
@@ -56,6 +57,9 @@ function refreshBoard(taskBoard: TaskBoard, milestones: Milestone[]) {
   }
 
   const active = sorted.find((milestone) => milestone.id === activeId) ?? sorted[0];
+  if (taskBoard.currentMilestoneId !== active?.id) {
+    didChange = true;
+  }
   const map = new Map(taskBoard.tasks.map((task) => [task.id, task]));
 
   for (const blueprint of active.taskBlueprints) {
@@ -66,15 +70,19 @@ function refreshBoard(taskBoard: TaskBoard, milestones: Milestone[]) {
         ...blueprint,
         status: depsOk ? "ready" : "backlog",
       });
+      didChange = true;
       continue;
     }
     if (existing.status === "backlog" && depsOk) {
       existing.status = "ready";
+      didChange = true;
     }
   }
 
   taskBoard.currentMilestoneId = active.id;
-  taskBoard.lastRefreshedAt = new Date().toISOString();
+  if (didChange) {
+    taskBoard.lastRefreshedAt = new Date().toISOString();
+  }
   return taskBoard;
 }
 

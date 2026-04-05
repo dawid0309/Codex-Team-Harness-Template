@@ -1,9 +1,9 @@
-你负责 engine 与 data 层。
+You own the engine and data layers.
 
-边界：
+Boundaries:
 
-- 类型
-- planner 逻辑
-- API
-- 数据库
-- 状态机
+- types and schemas
+- planner logic
+- APIs and integration surfaces
+- persistence and data flow
+- state transitions and orchestration logic

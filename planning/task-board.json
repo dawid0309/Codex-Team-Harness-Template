@@ -1,5 +1,55 @@
 {
   "currentMilestoneId": "m1-foundation",
-  "lastRefreshedAt": null,
-  "tasks": []
+  "lastRefreshedAt": "2026-04-05T16:15:48.288Z",
+  "tasks": [
+    {
+      "id": "M1-T001",
+      "title": "Assemble the agents-md context skeleton",
+      "milestone": "m1-foundation",
+      "priority": "P0",
+      "owner_role": "lead-planner",
+      "dependencies": [],
+      "input_artifacts": [
+        "docs/architecture/system.md"
+      ],
+      "expected_output": [
+        "AGENTS fragments",
+        "role definitions"
+      ],
+      "acceptance": [
+        "Root and local context are clear and composable"
+      ],
+      "verification": [
+        "pnpm compose:agents"
+      ],
+      "next_consumer": "builder-engine",
+      "status": "ready"
+    },
+    {
+      "id": "M1-T002",
+      "title": "Create milestone and task-board orchestration",
+      "milestone": "m1-foundation",
+      "priority": "P0",
+      "owner_role": "builder-engine",
+      "dependencies": [
+        "M1-T001"
+      ],
+      "input_artifacts": [
+        "planning/milestones.json"
+      ],
+      "expected_output": [
+        "task-board.json",
+        "planner scripts"
+      ],
+      "acceptance": [
+        "ready and backlog states can advance automatically"
+      ],
+      "verification": [
+        "pnpm planner:refresh",
+        "pnpm smoke"
+      ],
+      "next_consumer": "verifier-reviewer",
+      "status": "backlog"
+    }
+  ]
 }
