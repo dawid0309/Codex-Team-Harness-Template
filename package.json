@@ -1,7 +1,7 @@
 {
   "name": "codex-team-harness-template",
   "version": "0.1.0",
-  "description": "Reusable Codex team harness template with agent context composition, milestone planning, and verification workflows.",
+  "description": "Codex Team Harness Template: Provide a reusable Codex collaboration harness with agent context composition, milestone planning, and verification workflows.",
   "private": true,
   "license": "MIT",
   "packageManager": "pnpm@10.17.0",
@@ -26,6 +26,8 @@
     "verification"
   ],
   "scripts": {
+    "sync:project": "tsx scripts/sync-project.ts",
+    "init:project": "tsx scripts/init-project.ts",
     "compose:agents": "pnpm exec agents-md compose",
     "planner:refresh": "tsx scripts/lead-planner.ts refresh",
     "planner:next": "tsx scripts/lead-planner.ts next",

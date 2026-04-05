@@ -1,5 +1,5 @@
 <!-- agents-md: target=root, priority=100 -->
-# __PROJECT_NAME__ Codex Workbench
+# Codex Team Harness Template Codex Workbench
 
 This is the root operating context for the project.
 
@@ -12,5 +12,5 @@ Before doing substantial work, read:
 
 Default working assumptions:
 
-- Stack: `__STACK__`
+- Stack: `Node.js 22, TypeScript, pnpm, PowerShell, and agents-md`
 - Collaboration mode: one main orchestrator thread plus on-demand subagents

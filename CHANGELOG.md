@@ -11,8 +11,10 @@ The format is based on Keep a Changelog and this project follows semantic-style 
 - standard GitHub community health files and CI
 - TypeScript task-board helper commands
 - repository metadata, editor settings, and line-ending normalization
+- interactive project initialization and metadata sync workflow
 
 ### Changed
 
 - rewrote the main documentation and agent briefs to be readable and actionable
 - expanded verification to include TypeScript type-checking
+- made the repository self-describing while keeping fork bootstrap automated

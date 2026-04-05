@@ -2,6 +2,8 @@
 
 `Codex-Team-Harness-Template` is a reusable repository scaffold for running Codex like a small product team instead of a single chat thread. It gives a new project shared agent context, a milestone-driven task board, branch conventions, and a repeatable verification gate.
 
+For this repository itself, the source of truth for project identity lives in [`project.config.json`](./project.config.json). Forked projects can initialize their own name, goal, stack, and repository metadata with one command.
+
 ## What This Template Includes
 
 - `agents-md/` sources for composing repo-aware `AGENTS.md` instructions
@@ -22,31 +24,32 @@ Use this template when you want Codex to:
 
 ## Quick Start
 
-1. Copy or fork this repository for your new project.
-2. Replace the placeholders in the documentation:
-   - `__PROJECT_NAME__`
-   - `__PROJECT_GOAL__`
-   - `__STACK__`
-3. Install dependencies:
+1. Use GitHub's `Use this template` button or fork this repository.
+2. Install dependencies:
 
 ```powershell
 pnpm install
 ```
 
-4. Compose the generated agent instructions:
+3. Initialize the fork with your own project identity:
 
 ```powershell
-pnpm compose:agents
+pnpm init:project
 ```
 
-5. Refresh the task board and inspect the next ready tasks:
+Or provide values directly:
 
 ```powershell
-pnpm planner:refresh
-pnpm planner:next
+pnpm init:project -- --name "My Product" --slug "my-product" --goal "Ship a verifiable Codex workflow" --stack "Next.js, TypeScript, pnpm" --owner "your-github-user" --repoName "my-product"
 ```
 
-6. Use Codex against the repo with high-level prompts such as:
+4. Run the standard verification and bootstrap flow:
+
+```powershell
+pnpm verify
+```
+
+5. Use Codex against the repo with high-level prompts such as:
    - `Continue the current milestone`
    - `Open an experiment branch for this approach`
    - `Summarize the verified tasks and propose the next slice`
@@ -75,6 +78,8 @@ tests/           Automated tests and regression coverage
 
 | Command | Purpose |
 | --- | --- |
+| `pnpm init:project` | Interactively initialize a fork with its own project metadata and reset the task board |
+| `pnpm sync:project` | Reapply `project.config.json` to the package metadata and core docs |
 | `pnpm compose:agents` | Generate repo-local `AGENTS.md` files from `agents-md/` fragments |
 | `pnpm planner:refresh` | Rebuild the active milestone view and unlock ready tasks |
 | `pnpm planner:next` | Print the next recommended ready tasks |
@@ -87,8 +92,9 @@ tests/           Automated tests and regression coverage
 
 ## Customizing the Template
 
-At minimum, update these files before using the template for a real product:
+At minimum, initialize the project and then review these files before using the template for a real product:
 
+- `project.config.json`
 - `docs/architecture/system.md`
 - `planning/milestones.json`
 - `agents-md/00-project.agents.md`
@@ -101,10 +107,11 @@ If you derive a new product from this template, treat `src/` and `tests/` as the
 
 `pnpm verify` is the baseline quality gate for every meaningful change. In this template it:
 
-1. recomposes `AGENTS.md`
-2. refreshes the task board
-3. type-checks the automation scripts
-4. runs a smoke validation of the planning files
+1. syncs project metadata from `project.config.json`
+2. recomposes `AGENTS.md`
+3. refreshes the task board
+4. type-checks the automation scripts
+5. runs a smoke validation of the planning files
 
 If you extend the template into a real product, add your app-specific checks to the same verification path rather than creating separate hidden gates.
 
@@ -121,3 +128,14 @@ This repository includes the usual GitHub maintenance files for an open template
 - `.editorconfig` and `.gitattributes`
 
 That means a forked project starts with a clearer collaboration baseline instead of having to add all of that later.
+
+## Fork Workflow
+
+The recommended downstream workflow is:
+
+1. create a repo from this template
+2. run `pnpm init:project`
+3. review the generated `docs/architecture/system.md`
+4. rewrite `planning/milestones.json` for your actual product
+5. run `pnpm verify`
+6. start your first Codex milestone

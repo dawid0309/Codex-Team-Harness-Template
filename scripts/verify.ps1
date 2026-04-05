@@ -1,6 +1,9 @@
 $ErrorActionPreference = "Stop"
 $PSNativeCommandUseErrorActionPreference = $true
 
+Write-Host "==> Sync project metadata"
+pnpm run sync:project
+
 Write-Host "==> Compose AGENTS"
 pnpm run compose:agents
 

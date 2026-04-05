@@ -19,6 +19,7 @@ pnpm verify
 
 - Keep the template opinionated, but not over-engineered.
 - Preserve the planner -> builder -> verifier operating model.
+- Keep `project.config.json` as the single source of truth for project identity.
 - Update `agents-md/` fragments instead of hand-editing generated `AGENTS.md` files.
 - If you change planning or workflow behavior, update the docs in the same pull request.
 - If you expose a script in `package.json`, make sure it actually works and is documented.

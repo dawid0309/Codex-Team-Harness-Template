@@ -4,11 +4,11 @@ Use this document as the canonical product brief for Codex. Before asking multip
 
 ## Product Goal
 
-- Project name: `__PROJECT_NAME__`
-- Product goal: `__PROJECT_GOAL__`
-- Target users:
-- Success metric:
-- Current MVP boundary:
+- Project name: `Codex Team Harness Template`
+- Product goal: `Provide a reusable Codex collaboration harness with agent context composition, milestone planning, and verification workflows.`
+- Target users: Builders who want Codex to operate from repository state with planner, builder, and verifier roles.
+- Success metric: A new repository can be forked, initialized, and verified in a few minutes.
+- Current MVP boundary: Shared agent context, milestone planning, task-board orchestration, verification, and bootstrap automation for derived projects.
 
 ## Modules
 
@@ -31,7 +31,7 @@ List the important entities and contracts here before implementation starts. Goo
 
 ## Constraints
 
-- stack: `__STACK__`
+- stack: `Node.js 22, TypeScript, pnpm, PowerShell, and agents-md`
 - non-goals:
 - performance expectations:
 - security or compliance notes:
