@@ -1,5 +1,5 @@
 <!-- agents-md: target=root, priority=100 -->
-# Codex Team Harness Template Codex Workbench
+# Codex Harness Foundry Codex Workbench
 
 This is the root operating context for the project.
 

@@ -1,6 +1,6 @@
-# Codex Team Harness Template
+# Codex Harness Foundry
 
-`Codex-Team-Harness-Template` is a reusable repository scaffold for running Codex like a small product team instead of a single chat thread. It gives a new project shared agent context, a milestone-driven task board, branch conventions, and a repeatable verification gate.
+`Codex-Harness-Foundry` is a reusable repository scaffold for running Codex like a small product team instead of a single chat thread. It gives a new project shared agent context, a milestone-driven task board, branch conventions, and a repeatable verification gate.
 
 For this repository itself, the source of truth for project identity lives in [`project.config.json`](./project.config.json). Forked projects can initialize their own name, goal, stack, and repository metadata with one command.
 

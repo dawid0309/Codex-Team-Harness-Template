@@ -4,7 +4,7 @@ Use this document as the canonical product brief for Codex. Before asking multip
 
 ## Product Goal
 
-- Project name: `Codex Team Harness Template`
+- Project name: `Codex Harness Foundry`
 - Product goal: `Provide a reusable Codex collaboration harness with agent context composition, milestone planning, and verification workflows.`
 - Target users: Builders who want Codex to operate from repository state with planner, builder, and verifier roles.
 - Success metric: A new repository can be forked, initialized, and verified in a few minutes.

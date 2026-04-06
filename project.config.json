@@ -1,13 +1,13 @@
 {
-  "name": "Codex Team Harness Template",
-  "slug": "codex-team-harness-template",
+  "name": "Codex Harness Foundry",
+  "slug": "codex-harness-foundry",
   "goal": "Provide a reusable Codex collaboration harness with agent context composition, milestone planning, and verification workflows.",
   "stack": "Node.js 22, TypeScript, pnpm, PowerShell, and agents-md",
-  "description": "Codex Team Harness Template: Provide a reusable Codex collaboration harness with agent context composition, milestone planning, and verification workflows.",
+  "description": "Codex Harness Foundry: Provide a reusable Codex collaboration harness with agent context composition, milestone planning, and verification workflows.",
   "targetUsers": "Builders who want Codex to operate from repository state with planner, builder, and verifier roles.",
   "successMetric": "A new repository can be forked, initialized, and verified in a few minutes.",
   "mvpBoundary": "Shared agent context, milestone planning, task-board orchestration, verification, and bootstrap automation for derived projects.",
   "owner": "dawid0309",
-  "repoName": "Codex-Team-Harness-Template",
+  "repoName": "Codex-Harness-Foundry",
   "licenseHolder": "dawid0309"
 }

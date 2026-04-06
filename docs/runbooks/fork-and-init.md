@@ -1,6 +1,6 @@
 # Fork And Initialize
 
-This runbook is for teams creating a new repository from `Codex-Team-Harness-Template`.
+This runbook is for teams creating a new repository from `Codex-Harness-Foundry`.
 
 ## Recommended Flow
 

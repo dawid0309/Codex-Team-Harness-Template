@@ -1,7 +1,7 @@
 {
-  "name": "codex-team-harness-template",
+  "name": "codex-harness-foundry",
   "version": "0.1.0",
-  "description": "Codex Team Harness Template: Provide a reusable Codex collaboration harness with agent context composition, milestone planning, and verification workflows.",
+  "description": "Codex Harness Foundry: Provide a reusable Codex collaboration harness with agent context composition, milestone planning, and verification workflows.",
   "private": true,
   "license": "MIT",
   "packageManager": "pnpm@10.17.0",
@@ -11,12 +11,12 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/dawid0309/Codex-Team-Harness-Template.git"
+    "url": "git+https://github.com/dawid0309/Codex-Harness-Foundry.git"
   },
   "bugs": {
-    "url": "https://github.com/dawid0309/Codex-Team-Harness-Template/issues"
+    "url": "https://github.com/dawid0309/Codex-Harness-Foundry/issues"
   },
-  "homepage": "https://github.com/dawid0309/Codex-Team-Harness-Template#readme",
+  "homepage": "https://github.com/dawid0309/Codex-Harness-Foundry#readme",
   "keywords": [
     "codex",
     "template",
