@@ -33,6 +33,8 @@
     "planner:publish": "tsx scripts/lead-planner.ts publish",
     "planner:refresh": "tsx scripts/lead-planner.ts refresh",
     "planner:next": "tsx scripts/lead-planner.ts next",
+    "next-milestone:propose": "tsx scripts/next-milestone.ts propose",
+    "next-milestone:publish": "tsx scripts/next-milestone.ts publish",
     "tasks:plan": "tsx scripts/harness/tasks.ts plan",
     "tasks:status": "tsx scripts/harness/tasks.ts status",
     "tasks:update": "tsx scripts/harness/tasks.ts update",

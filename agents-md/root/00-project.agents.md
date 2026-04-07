@@ -9,7 +9,8 @@ Before doing substantial work, read:
 2. `planning/milestones.json`
 3. `planning/task-board.json`
 4. `planning/planner-output.json`
-5. the nearest role-specific `AGENTS.md`
+5. `planning/next-milestone-output.json`
+6. the nearest role-specific `AGENTS.md`
 
 Default working assumptions:
 

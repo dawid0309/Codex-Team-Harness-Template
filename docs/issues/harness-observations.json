@@ -162,6 +162,26 @@
       "closureCondition": [
         "Repeated unrecoverable blockers are detected from runtime event output and transition the runtime to blocked instead of looping."
       ]
+    },
+    {
+      "number": 17,
+      "title": "Propose the next milestone when the final milestone is fully verified",
+      "batch": "followup",
+      "status": "landed",
+      "summary": "Add a separate repo-native next-milestone proposal flow so the roadmap can extend itself once the current final milestone is fully verified, without expanding the ordinary planner's task-publication authority.",
+      "linkedIssues": [12],
+      "repoEvidence": [
+        "The ordinary planner only publishes tasks from milestone blueprints that already exist in planning/milestones.json.",
+        "When the final milestone is fully complete, planner-output can become empty even though the repository still needs a structured way to propose the next iteration."
+      ],
+      "implementationNotes": [
+        "Add planning/next-milestone-output.json plus pnpm next-milestone:propose and pnpm next-milestone:publish.",
+        "Allow proposals only when the active final milestone is fully verified and there is no later milestone blueprint.",
+        "Keep leader acceptance explicit by writing the proposed milestone into planning/milestones.json only after publish, then let the ordinary planner publish the new milestone's tasks."
+      ],
+      "closureCondition": [
+        "The repo can generate and accept a next milestone proposal after the current final milestone is fully verified, and the workflow is documented for orchestrator use."
+      ]
     }
   ]
 }

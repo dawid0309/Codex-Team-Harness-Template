@@ -15,6 +15,8 @@ These commands are intentionally Codex-CLI specific. The template uses `codex ex
 
 When the runtime needs new work published, the leader/orchestrator should request planner output with `pnpm planner:propose`, inspect `planning/planner-output.json`, and accept it with `pnpm planner:publish` instead of publishing tasks inline.
 
+If the active final milestone is fully verified and no later milestone blueprint exists, the orchestrator should switch to `pnpm next-milestone:propose`, inspect `planning/next-milestone-output.json`, and accept it with `pnpm next-milestone:publish` before asking the ordinary planner to publish tasks from the new milestone.
+
 ## Runtime State
 
 Runtime state is stored in ignored files under `data/runtime/`.

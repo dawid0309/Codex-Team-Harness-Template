@@ -160,6 +160,8 @@ Full reference:
 | `pnpm planner:publish` | Accept planner output into `planning/task-board.json` as leader/orchestrator |
 | `pnpm planner:refresh` | Compatibility shortcut that runs `planner:propose` and `planner:publish` together |
 | `pnpm planner:next` | Print the next recommended ready tasks |
+| `pnpm next-milestone:propose` | Generate a follow-on milestone proposal in `planning/next-milestone-output.json` when the final milestone is complete |
+| `pnpm next-milestone:publish` | Accept the next milestone proposal into `planning/milestones.json` as leader/orchestrator |
 | `pnpm tasks:plan` | Show the current actionable task plan |
 | `pnpm tasks:status` | Show the task board summary and task list |
 | `pnpm tasks:update -- <task-id> <status>` | Update a task status in `planning/task-board.json` |
@@ -184,7 +186,7 @@ src/             Product code for the real project built from this template
 tests/           Automated tests and regression coverage
 ```
 
-`planning/planner-output.json` is the planner-owned proposal artifact. `planning/task-board.json` remains the leader-approved execution state.
+`planning/planner-output.json` is the planner-owned task-publication artifact. `planning/next-milestone-output.json` is the planner-owned roadmap-extension artifact. `planning/task-board.json` remains the leader-approved execution state.
 
 ## FAQ
 
@@ -253,6 +255,7 @@ For longer Codex CLI runs, the template can supervise a background session with 
 - Check state with `pnpm runtime:status`
 - Stop or resume with `pnpm runtime:stop` and `pnpm runtime:resume`
 - Set `autonomy.maxConsecutiveTerminalBlockers` if you want repeated policy or sandbox blockers to stop in `blocked` instead of looping
+- When the final milestone is fully verified and no later blueprint exists, the orchestrator should switch to `pnpm next-milestone:propose`
 - Read the [runtime control runbook](./docs/runbooks/runtime-control.md) for the status file and stop-condition details
 
 ## Planner Publication Model
@@ -261,6 +264,8 @@ Foundry now separates planner publication from leader orchestration in repo-visi
 
 - The planner proposes task publication in `planning/planner-output.json`
 - The leader/orchestrator reviews that artifact and accepts it into `planning/task-board.json`
+- When the final milestone is complete, the next-milestone planner proposes roadmap extension in `planning/next-milestone-output.json`
+- The leader/orchestrator reviews that artifact and accepts it into `planning/milestones.json`
 - Builders consume published tasks only after leader acceptance
 - `pnpm planner:refresh` remains as a compatibility shortcut for `planner:propose` plus `planner:publish`
 

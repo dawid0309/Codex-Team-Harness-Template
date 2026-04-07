@@ -59,11 +59,18 @@ async function refresh() {
 }
 
 async function next() {
-  const taskBoard = await loadJson<TaskBoard>(taskBoardPath);
+  const [milestones, taskBoard] = await Promise.all([
+    loadJson<Milestone[]>(milestonesPath),
+    loadJson<TaskBoard>(taskBoardPath),
+  ]);
   const ready = taskBoard.tasks.filter((task) => task.status === "ready");
 
   if (ready.length === 0) {
     console.log("No ready tasks.");
+    const output = buildPlannerOutput(taskBoard, milestones);
+    for (const line of output.summary) {
+      console.log(`- ${line}`);
+    }
     return;
   }
 

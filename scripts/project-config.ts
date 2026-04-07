@@ -131,9 +131,9 @@ export function defaultVerificationConfig(): VerificationConfig {
 export function defaultAutonomyConfig(): AutonomyConfig {
   return {
     basePrompt:
-      "Act as the leader/orchestrator. Read repository truth, request planner publication with `pnpm planner:propose` when no ready tasks exist, inspect `planning/planner-output.json`, accept it with `pnpm planner:publish` when appropriate, then advance the highest-leverage published task and leave the repo in a verifiable state.",
+      "Act as the leader/orchestrator. Read repository truth, request planner publication with `pnpm planner:propose` when no ready tasks exist, inspect `planning/planner-output.json`, and accept it with `pnpm planner:publish` when appropriate. If the active final milestone is fully verified and there is no later milestone blueprint, request `pnpm next-milestone:propose`, inspect `planning/next-milestone-output.json`, and accept it with `pnpm next-milestone:publish` when appropriate. Then advance the highest-leverage published task and leave the repo in a verifiable state.",
     resumePrompt:
-      "Resume as the leader/orchestrator from repository state and the previous Codex thread. If no ready tasks exist, request planner output with `pnpm planner:propose`, inspect `planning/planner-output.json`, and publish only after accepting the proposal. Then advance the next meaningful published task and stop after a coherent, verifiable unit of work.",
+      "Resume as the leader/orchestrator from repository state and the previous Codex thread. If no ready tasks exist, request planner output with `pnpm planner:propose`, inspect `planning/planner-output.json`, and publish only after accepting the proposal. If the active final milestone is fully verified and there is no later milestone blueprint, request `pnpm next-milestone:propose`, inspect `planning/next-milestone-output.json`, and publish only after accepting that proposal. Then advance the next meaningful published task and stop after a coherent, verifiable unit of work.",
     sandboxMode: "workspace-write",
     selectedStopCondition: "milestone_complete_and_issue_exports_present",
     issueExportDirectory: "docs/issues/harness",
@@ -173,6 +173,7 @@ Primary references:
 - \`planning/milestones.json\`
 - \`planning/task-board.json\`
 - \`planning/planner-output.json\`
+- \`planning/next-milestone-output.json\`
 `;
 }
 
@@ -188,7 +189,8 @@ Before doing substantial work, read:
 2. \`planning/milestones.json\`
 3. \`planning/task-board.json\`
 4. \`planning/planner-output.json\`
-5. the nearest role-specific \`AGENTS.md\`
+5. \`planning/next-milestone-output.json\`
+6. the nearest role-specific \`AGENTS.md\`
 
 Default working assumptions:
 
