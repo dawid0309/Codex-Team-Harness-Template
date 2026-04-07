@@ -33,6 +33,12 @@ pnpm init:project
 pnpm verify
 ```
 
+8. If you plan to manage GitHub issue responses from repo state, export the tracked drafts:
+
+```powershell
+pnpm issues:export
+```
+
 ## What `pnpm init:project` Does
 
 - updates `project.config.json`
@@ -40,6 +46,23 @@ pnpm verify
 - rewrites the core project identity docs
 - refreshes the license holder and `CODEOWNERS`
 - resets `planning/task-board.json` to a clean starting point
+
+## Follow-On Template Controls
+
+After initialization, the main repo-native control points are:
+
+- `project.config.json.verification` for the ordered verify stages behind `pnpm verify`
+- `project.config.json.autonomy` for Codex CLI runtime behavior and structural stop conditions
+- `docs/issues/harness-observations.json` for tracked issue-export source data
+
+Useful commands:
+
+```powershell
+pnpm verify
+pnpm planner:next
+pnpm issues:export
+pnpm runtime:status
+```
 
 ## Suggested First Prompts For Codex
 

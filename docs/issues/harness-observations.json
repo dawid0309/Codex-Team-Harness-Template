@@ -1,0 +1,107 @@
+{
+  "version": 1,
+  "project": "Codex Harness Foundry",
+  "source": "Template issue observations maintained in-repo for export",
+  "issues": [
+    {
+      "number": 6,
+      "title": "Make verification stages configurable from project config",
+      "batch": "batch1",
+      "status": "planned",
+      "summary": "Move the fixed verify pipeline into project.config.json so downstream repos can keep one canonical verify command while tailoring stages.",
+      "linkedIssues": [8, 9],
+      "repoEvidence": [
+        "scripts/verify.ps1 currently hardcodes the stage order and commands.",
+        "project.config.json already acts as the template's main repo-native source of truth."
+      ],
+      "implementationNotes": [
+        "Add project.config.json.verification.stages with id, label, command, and enabled.",
+        "Replace the PowerShell implementation with a thin entrypoint that calls a TypeScript runner.",
+        "Keep the current five stages as defaults so the existing template flow stays intact."
+      ],
+      "closureCondition": [
+        "Config-backed verification stages land and pnpm verify reproduces the current default behavior."
+      ]
+    },
+    {
+      "number": 7,
+      "title": "Add background runtime controls for Codex CLI",
+      "batch": "batch2",
+      "status": "planned",
+      "summary": "Provide start, status, stop, and resume commands for a Codex-CLI-specific background runtime so longer runs can be supervised from repo state.",
+      "linkedIssues": [10],
+      "repoEvidence": [
+        "The template already encodes planning state in planning/task-board.json and project.config.json.",
+        "Codex CLI supports non-interactive exec and resume flows that can be wrapped by the template."
+      ],
+      "implementationNotes": [
+        "Add a runtime controller specific to codex exec and codex exec resume.",
+        "Persist runtime status in ignored files under data/runtime/.",
+        "Report thread id, process handles, heartbeats, stop condition, and latest result summary."
+      ],
+      "closureCondition": [
+        "Background runtime commands land and runtime state can be queried and controlled from the repo."
+      ]
+    },
+    {
+      "number": 8,
+      "title": "Standardize issue export command and default output location",
+      "batch": "batch1",
+      "status": "planned",
+      "summary": "Add one repo-owned issue export command and standardize generated issue artifacts under docs/issues/harness/.",
+      "linkedIssues": [9],
+      "repoEvidence": [
+        "The template currently lacks a single canonical issue export command.",
+        "Issue-response artifacts should be reviewable and versioned inside the repository."
+      ],
+      "implementationNotes": [
+        "Track issue observations in docs/issues/harness-observations.json.",
+        "Expose pnpm issues:export as the canonical command.",
+        "Write deterministic Markdown outputs to docs/issues/harness/."
+      ],
+      "closureCondition": [
+        "pnpm issues:export exists and docs/issues/harness/ becomes the default generated output path."
+      ]
+    },
+    {
+      "number": 9,
+      "title": "Remove exporter drift with one canonical renderer and path",
+      "batch": "batch1",
+      "status": "planned",
+      "summary": "Resolve exporter inconsistency by making the template own one schema, one renderer, and one output path for issue artifacts.",
+      "linkedIssues": [8],
+      "repoEvidence": [
+        "Exporter drift usually comes from duplicated formatting logic and multiple destination conventions.",
+        "A template-level canonical renderer is the cleanest way to keep downstream exports aligned."
+      ],
+      "implementationNotes": [
+        "Reuse a single markdown renderer inside scripts/issues-export.ts.",
+        "Generate both per-issue drafts and an index from the same source schema.",
+        "Treat this as resolved together with #8 unless a separate downstream integration requirement appears."
+      ],
+      "closureCondition": [
+        "The template uses one canonical issue export pipeline with a single renderer and default path."
+      ]
+    },
+    {
+      "number": 10,
+      "title": "Use structural stop conditions for autonomy",
+      "batch": "batch2",
+      "status": "planned",
+      "summary": "Make autonomous stopping decisions from repository state instead of free-form text heuristics.",
+      "linkedIssues": [7],
+      "repoEvidence": [
+        "planning/task-board.json already exposes milestone and task states that can drive stop predicates.",
+        "Issue export artifacts can be verified structurally by checking the generated directory."
+      ],
+      "implementationNotes": [
+        "Add project.config.json.autonomy with the selected stop condition.",
+        "Evaluate stop predicates against planning/task-board.json and docs/issues/harness/.",
+        "Implement stop logic together with the Codex CLI runtime controller."
+      ],
+      "closureCondition": [
+        "The runtime can stop from configured repo-state predicates without relying on natural-language completion detection."
+      ]
+    }
+  ]
+}

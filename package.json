@@ -34,9 +34,14 @@
     "tasks:plan": "tsx scripts/harness/tasks.ts plan",
     "tasks:status": "tsx scripts/harness/tasks.ts status",
     "tasks:update": "tsx scripts/harness/tasks.ts update",
+    "issues:export": "tsx scripts/issues-export.ts",
     "smoke": "tsx scripts/smoke.ts",
     "typecheck": "tsc --project tsconfig.json",
-    "verify": "powershell -ExecutionPolicy Bypass -File scripts/verify.ps1"
+    "verify": "powershell -ExecutionPolicy Bypass -File scripts/verify.ps1",
+    "runtime:start": "tsx scripts/runtime.ts start",
+    "runtime:status": "tsx scripts/runtime.ts status",
+    "runtime:stop": "tsx scripts/runtime.ts stop",
+    "runtime:resume": "tsx scripts/runtime.ts resume"
   },
   "devDependencies": {
     "@types/node": "^22.14.1",

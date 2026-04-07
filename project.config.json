@@ -9,5 +9,47 @@
   "mvpBoundary": "Shared agent context, milestone planning, task-board orchestration, verification, and bootstrap automation for derived projects.",
   "owner": "dawid0309",
   "repoName": "Codex-Harness-Foundry",
-  "licenseHolder": "dawid0309"
+  "licenseHolder": "dawid0309",
+  "verification": {
+    "stages": [
+      {
+        "id": "sync-project",
+        "label": "Sync project metadata",
+        "command": "pnpm run sync:project",
+        "enabled": true
+      },
+      {
+        "id": "compose-agents",
+        "label": "Compose AGENTS",
+        "command": "pnpm run compose:agents",
+        "enabled": true
+      },
+      {
+        "id": "refresh-planner",
+        "label": "Refresh task board",
+        "command": "pnpm run planner:refresh",
+        "enabled": true
+      },
+      {
+        "id": "typecheck",
+        "label": "Typecheck",
+        "command": "pnpm run typecheck",
+        "enabled": true
+      },
+      {
+        "id": "smoke",
+        "label": "Smoke",
+        "command": "pnpm run smoke",
+        "enabled": true
+      }
+    ]
+  },
+  "autonomy": {
+    "basePrompt": "Continue the active project by selecting the highest-leverage task from repository state, making the smallest meaningful change, and leaving the repo in a verifiable state.",
+    "resumePrompt": "Resume from the repository state and previous Codex thread. Advance the next meaningful task, then stop after a coherent, verifiable unit of work.",
+    "sandboxMode": "workspace-write",
+    "selectedStopCondition": "milestone_complete_and_issue_exports_present",
+    "issueExportDirectory": "docs/issues/harness",
+    "model": null
+  }
 }

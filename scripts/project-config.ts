@@ -14,6 +14,34 @@ export type ProjectConfig = {
   owner: string;
   repoName: string;
   licenseHolder: string;
+  verification?: VerificationConfig;
+  autonomy?: AutonomyConfig;
+};
+
+export type VerificationStage = {
+  id: string;
+  label: string;
+  command: string;
+  enabled: boolean;
+};
+
+export type VerificationConfig = {
+  stages: VerificationStage[];
+};
+
+export type StopConditionId =
+  | "active_milestone_no_ready_or_in_progress"
+  | "active_milestone_all_done"
+  | "issue_exports_present"
+  | "milestone_complete_and_issue_exports_present";
+
+export type AutonomyConfig = {
+  basePrompt: string;
+  resumePrompt: string;
+  sandboxMode: string;
+  selectedStopCondition: StopConditionId;
+  issueExportDirectory: string;
+  model: string | null;
 };
 
 export const root = process.cwd();
@@ -60,6 +88,56 @@ export async function readProjectConfig(): Promise<ProjectConfig> {
 
 export async function writeProjectConfig(config: ProjectConfig): Promise<void> {
   await writeFile(projectConfigPath, `${JSON.stringify(config, null, 2)}\n`, "utf8");
+}
+
+export function defaultVerificationConfig(): VerificationConfig {
+  return {
+    stages: [
+      {
+        id: "sync-project",
+        label: "Sync project metadata",
+        command: "pnpm run sync:project",
+        enabled: true,
+      },
+      {
+        id: "compose-agents",
+        label: "Compose AGENTS",
+        command: "pnpm run compose:agents",
+        enabled: true,
+      },
+      {
+        id: "refresh-planner",
+        label: "Refresh task board",
+        command: "pnpm run planner:refresh",
+        enabled: true,
+      },
+      {
+        id: "typecheck",
+        label: "Typecheck",
+        command: "pnpm run typecheck",
+        enabled: true,
+      },
+      {
+        id: "smoke",
+        label: "Smoke",
+        command: "pnpm run smoke",
+        enabled: true,
+      },
+    ],
+  };
+}
+
+export function defaultAutonomyConfig(): AutonomyConfig {
+  return {
+    basePrompt:
+      "Continue the active project by selecting the highest-leverage task from repository state, making the smallest meaningful change, and leaving the repo in a verifiable state.",
+    resumePrompt:
+      "Resume from the repository state and previous Codex thread. Advance the next meaningful task, then stop after a coherent, verifiable unit of work.",
+    sandboxMode: "workspace-write",
+    selectedStopCondition: "milestone_complete_and_issue_exports_present",
+    issueExportDirectory: "docs/issues/harness",
+    model: null,
+  };
 }
 
 export function deriveRepositoryMetadata(config: ProjectConfig) {
@@ -228,5 +306,7 @@ export function normalizeConfig(input: Partial<ProjectConfig>, existing: Project
     owner,
     repoName,
     licenseHolder: (input.licenseHolder ?? existing.licenseHolder ?? owner).trim() || owner,
+    verification: input.verification ?? existing.verification ?? defaultVerificationConfig(),
+    autonomy: input.autonomy ?? existing.autonomy ?? defaultAutonomyConfig(),
   };
 }

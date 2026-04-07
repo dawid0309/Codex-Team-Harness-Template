@@ -85,7 +85,13 @@ pnpm verify
 pnpm planner:next
 ```
 
-5. For deeper setup, follow the [fork and initialize runbook](./docs/runbooks/fork-and-init.md).
+5. Export tracked issue drafts when you want repo-reviewed GitHub issue replies:
+
+```powershell
+pnpm issues:export
+```
+
+6. For deeper setup, follow the [fork and initialize runbook](./docs/runbooks/fork-and-init.md).
 
 ## Concrete Use Case
 
@@ -153,9 +159,14 @@ Full reference:
 | `pnpm tasks:plan` | Show the current actionable task plan |
 | `pnpm tasks:status` | Show the task board summary and task list |
 | `pnpm tasks:update -- <task-id> <status>` | Update a task status in `planning/task-board.json` |
+| `pnpm issues:export` | Generate deterministic issue-response drafts into `docs/issues/harness/` |
 | `pnpm smoke` | Validate that planning files are structurally usable |
 | `pnpm typecheck` | Type-check the automation scripts |
-| `pnpm verify` | Run the standard verification gate |
+| `pnpm verify` | Run the config-backed verification gate from `project.config.json.verification` |
+| `pnpm runtime:start` | Start a Codex-CLI-specific background runtime |
+| `pnpm runtime:status` | Inspect runtime state from `data/runtime/` |
+| `pnpm runtime:stop` | Stop the background runtime and clear active process handles |
+| `pnpm runtime:resume` | Resume a stopped or interrupted runtime session |
 
 ## Repository Layout
 
@@ -198,7 +209,14 @@ If you derive a new product from this template, treat `src/` and `tests/` as the
 
 ## Verification Philosophy
 
-`pnpm verify` is the baseline quality gate for every meaningful change. In this template it:
+`pnpm verify` is the baseline quality gate for every meaningful change. It is configured from `project.config.json.verification.stages`, where each stage defines:
+
+- `id`
+- `label`
+- `command`
+- `enabled`
+
+The default template stages still:
 
 1. syncs project metadata from `project.config.json`
 2. recomposes `AGENTS.md`
@@ -207,6 +225,27 @@ If you derive a new product from this template, treat `src/` and `tests/` as the
 5. runs a smoke validation of the planning files
 
 If you extend the template into a real product, add your app-specific checks to the same verification path rather than creating separate hidden gates.
+
+## Issue Export Workflow
+
+Issue planning notes can live in the repo and still export cleanly to GitHub-facing Markdown.
+
+- Track observations in `docs/issues/harness-observations.json`
+- Generate drafts with `pnpm issues:export`
+- Review generated files in `docs/issues/harness/`
+- Follow the [issue export runbook](./docs/runbooks/issues-export.md) when mapping drafts to GitHub issues
+
+The template intentionally owns one source schema, one renderer, and one default export path so issue replies do not drift across multiple scripts.
+
+## Runtime Control
+
+For longer Codex CLI runs, the template can supervise a background session with structural stop conditions.
+
+- Configure runtime behavior in `project.config.json.autonomy`
+- Start with `pnpm runtime:start`
+- Check state with `pnpm runtime:status`
+- Stop or resume with `pnpm runtime:stop` and `pnpm runtime:resume`
+- Read the [runtime control runbook](./docs/runbooks/runtime-control.md) for the status file and stop-condition details
 
 ## Maintenance
 

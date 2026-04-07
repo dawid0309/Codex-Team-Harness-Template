@@ -1,19 +1,4 @@
 $ErrorActionPreference = "Stop"
 $PSNativeCommandUseErrorActionPreference = $true
 
-Write-Host "==> Sync project metadata"
-pnpm run sync:project
-
-Write-Host "==> Compose AGENTS"
-pnpm run compose:agents
-
-Write-Host "==> Refresh task board"
-pnpm run planner:refresh
-
-Write-Host "==> Typecheck"
-pnpm run typecheck
-
-Write-Host "==> Smoke"
-pnpm run smoke
-
-Write-Host "Verification complete."
+pnpm exec tsx scripts/run-verify.ts
