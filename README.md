@@ -170,7 +170,7 @@ Full reference:
 | `pnpm runtime:start` | Start a Codex-CLI-specific background runtime |
 | `pnpm runtime:status` | Inspect runtime state from `data/runtime/` |
 | `pnpm runtime:stop` | Stop the background runtime and clear active process handles |
-| `pnpm runtime:resume` | Resume a stopped or interrupted runtime session |
+| `pnpm runtime:resume` | Resume a stopped, interrupted, failed, or blocked runtime session |
 
 ## Repository Layout
 
@@ -248,9 +248,11 @@ The template intentionally owns one source schema, one renderer, and one default
 For longer Codex CLI runs, the template can supervise a background session with structural stop conditions.
 
 - Configure runtime behavior in `project.config.json.autonomy`
+- Detached runs use a repo-scoped Codex home under `data/runtime/codex-home/` to avoid inheriting workstation-global Codex state
 - Start with `pnpm runtime:start`
 - Check state with `pnpm runtime:status`
 - Stop or resume with `pnpm runtime:stop` and `pnpm runtime:resume`
+- Set `autonomy.maxConsecutiveTerminalBlockers` if you want repeated policy or sandbox blockers to stop in `blocked` instead of looping
 - Read the [runtime control runbook](./docs/runbooks/runtime-control.md) for the status file and stop-condition details
 
 ## Planner Publication Model

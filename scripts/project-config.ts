@@ -42,6 +42,7 @@ export type AutonomyConfig = {
   selectedStopCondition: StopConditionId;
   issueExportDirectory: string;
   model: string | null;
+  maxConsecutiveTerminalBlockers: number;
 };
 
 export const root = process.cwd();
@@ -137,6 +138,7 @@ export function defaultAutonomyConfig(): AutonomyConfig {
     selectedStopCondition: "milestone_complete_and_issue_exports_present",
     issueExportDirectory: "docs/issues/harness",
     model: null,
+    maxConsecutiveTerminalBlockers: 3,
   };
 }
 

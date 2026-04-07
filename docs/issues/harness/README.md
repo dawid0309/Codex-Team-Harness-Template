@@ -10,4 +10,6 @@ Generated from `docs/issues/harness-observations.json`.
 | [#9](https://github.com/dawid0309/Codex-Harness-Foundry/issues/9) | Remove exporter drift with one canonical renderer and path | batch1 | landed | [draft](./issue-9.md) |
 | [#10](https://github.com/dawid0309/Codex-Harness-Foundry/issues/10) | Use structural stop conditions for autonomy | batch2 | landed | [draft](./issue-10.md) |
 | [#12](https://github.com/dawid0309/Codex-Harness-Foundry/issues/12) | Separate leader orchestration from planner task publication | followup | landed | [draft](./issue-12.md) |
+| [#14](https://github.com/dawid0309/Codex-Harness-Foundry/issues/14) | Detached runtime inherits global shell and Codex state noise | followup | landed | [draft](./issue-14.md) |
+| [#15](https://github.com/dawid0309/Codex-Harness-Foundry/issues/15) | Runtime keeps looping after repeated unrecoverable blockers | followup | landed | [draft](./issue-15.md) |
 

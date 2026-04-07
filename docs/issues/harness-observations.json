@@ -122,6 +122,46 @@
       "closureCondition": [
         "Leader orchestration and planner publication are separated in code, repo artifacts, and docs."
       ]
+    },
+    {
+      "number": 14,
+      "title": "Detached runtime inherits global shell and Codex state noise",
+      "batch": "followup",
+      "status": "landed",
+      "summary": "Isolate detached Codex runtime sessions inside a repo-scoped Codex home so background runs do not inherit workstation-global shell state, Codex config noise, or unrelated local integrations.",
+      "linkedIssues": [15],
+      "repoEvidence": [
+        "Detached runtime sessions previously inherited the operator's global shell and Codex environment.",
+        "Background runs should be reproducible from repository state instead of depending on machine-specific profiles or global Codex state."
+      ],
+      "implementationNotes": [
+        "Create a repo-scoped runtime home under data/runtime/codex-home and write a filtered config.toml for detached runs.",
+        "Sanitize inherited environment variables so CODEX_HOME, HOME, and USERPROFILE point at the runtime home.",
+        "Force detached Codex exec runs to use shell_environment_policy.inherit=none so background cycles start from repo-scoped state."
+      ],
+      "closureCondition": [
+        "Detached runtime sessions run from a repo-scoped Codex home and stop inheriting workstation-global shell or Codex state noise."
+      ]
+    },
+    {
+      "number": 15,
+      "title": "Runtime keeps looping after repeated unrecoverable blockers",
+      "batch": "followup",
+      "status": "landed",
+      "summary": "Detect terminal blockers from runtime event output and stop background sessions in a blocked state after the configured retry budget instead of letting them spin indefinitely.",
+      "linkedIssues": [14],
+      "repoEvidence": [
+        "Codex CLI emits policy and sandbox failures inside stdout JSON event payloads, not just in the last assistant message.",
+        "Without structural blocker tracking, the runtime can repeat the same unrecoverable failure across multiple cycles."
+      ],
+      "implementationNotes": [
+        "Inspect command_execution event output from the runtime stdout stream when classifying blockers.",
+        "Track consecutive blocker signatures in runtime status and expose the configured retry budget in project.config.json.autonomy.maxConsecutiveTerminalBlockers.",
+        "Move the runtime to blocked after the same terminal blocker repeats for the configured number of cycles, then allow resume once the operator fixes the constraint."
+      ],
+      "closureCondition": [
+        "Repeated unrecoverable blockers are detected from runtime event output and transition the runtime to blocked instead of looping."
+      ]
     }
   ]
 }

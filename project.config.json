@@ -50,6 +50,7 @@
     "sandboxMode": "workspace-write",
     "selectedStopCondition": "milestone_complete_and_issue_exports_present",
     "issueExportDirectory": "docs/issues/harness",
-    "model": null
+    "model": null,
+    "maxConsecutiveTerminalBlockers": 3
   }
 }
