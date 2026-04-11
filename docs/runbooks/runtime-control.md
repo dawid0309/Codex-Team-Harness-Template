@@ -9,9 +9,17 @@ pnpm runtime:start
 pnpm runtime:status
 pnpm runtime:stop
 pnpm runtime:resume
+pnpm runtime:supervise
+pnpm runtime:supervise:status
+pnpm runtime:supervise:stop
+pnpm runtime:watch
 ```
 
 These commands are intentionally Codex-CLI specific. The template uses `codex exec` for the first cycle and `codex exec resume` for follow-up cycles.
+
+- `runtime:start` and `runtime:resume` control the inner detached runtime worker.
+- `runtime:supervise` adds an outer watchdog that can relaunch interrupted or failed runtime workers.
+- `runtime:watch` renders both status layers and optional downstream project status output.
 
 When the runtime needs new work published, the leader/orchestrator should request planner output with `pnpm planner:propose`, inspect `planning/planner-output.json`, and accept it with `pnpm planner:publish` instead of publishing tasks inline.
 
@@ -25,12 +33,55 @@ Runtime state is stored in ignored files under `data/runtime/`.
 - `data/runtime/codex-runtime-stdout.log`
 - `data/runtime/codex-runtime-stderr.log`
 - `data/runtime/codex-runtime-last-message.txt`
+- `data/runtime/supervisor-status.json`
 
-The status file records the runtime state, worker and child process ids, thread id, heartbeat, selected stop condition, runtime home, terminal blocker streak, effective detached sandbox mode, whether the last cycle executed a repo-local command, and latest result summary.
+The runtime status file records the runtime state, worker and child process ids, thread id, heartbeat, selected stop condition, runtime home, terminal blocker streak, effective detached sandbox mode, whether the last cycle executed a repo-local command, the last post-iteration hook result, and the latest result summary.
+
+The supervisor status file records the outer watchdog state, restart counters, next launch time, last launch command, and the latest observed runtime pid/thread.
 
 Detached runs use a repo-scoped Codex home under `data/runtime/codex-home/`. This keeps the runtime from inheriting workstation-global Codex state, shell profiles, or unrelated local noise when it starts in the background.
 
 On Windows, detached runtime sessions keep the real profile directories intact. When the configured detached sandbox is `workspace-write`, the runtime falls back to `danger-full-access` for the detached Codex process so shell startup can reach repo commands reliably.
+
+## Harness Config
+
+Generic watchdog and hook behavior lives in `harness.config.json`.
+
+```json
+{
+  "supervisor": {
+    "childCommand": null,
+    "workdir": ".",
+    "pollIntervalSeconds": 5,
+    "restartBackoffSeconds": 10,
+    "maxRestartsPerHour": 12
+  },
+  "hooks": {
+    "postIterationCommand": null,
+    "projectStatusCommand": null
+  }
+}
+```
+
+- `supervisor.childCommand`: optional override if a downstream repo wants the watchdog to launch a custom command instead of the default `runtime:start` / `runtime:resume` decision.
+- `supervisor.workdir`: working directory for the launched child command.
+- `supervisor.pollIntervalSeconds`: how often the watchdog refreshes status and checks runtime liveness.
+- `supervisor.restartBackoffSeconds`: wait time before retrying a failed launch.
+- `supervisor.maxRestartsPerHour`: hard cap that stops the watchdog instead of looping forever on repeated failures.
+- `hooks.postIterationCommand`: optional command that runs after each completed runtime cycle. Use this for downstream planner/status refresh logic.
+- `hooks.projectStatusCommand`: optional command whose stdout is shown in `pnpm runtime:watch`.
+
+## Downstream Hooks
+
+Keep project-specific behavior in downstream repos, not in the template core.
+
+Recommended pattern:
+
+1. Keep project-specific planner/status logic in repo-local scripts or package commands.
+2. Point `hooks.postIterationCommand` at the downstream planner/status refresh sequence.
+3. Point `hooks.projectStatusCommand` at the downstream status command that prints exactly the fields operators should watch.
+
+That gives downstream repos richer visibility without hardcoding milestone schemas, product names, or repo paths into Foundry.
 
 ## Structural Stop Conditions
 

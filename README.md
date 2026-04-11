@@ -173,6 +173,10 @@ Full reference:
 | `pnpm runtime:status` | Inspect runtime state from `data/runtime/` |
 | `pnpm runtime:stop` | Stop the background runtime and clear active process handles |
 | `pnpm runtime:resume` | Resume a stopped, interrupted, failed, or blocked runtime session |
+| `pnpm runtime:supervise` | Start an outer watchdog that relaunches interrupted runtime workers |
+| `pnpm runtime:supervise:status` | Inspect watchdog state from `data/runtime/supervisor-status.json` |
+| `pnpm runtime:supervise:stop` | Stop the watchdog and the inner runtime together |
+| `pnpm runtime:watch` | Live-watch supervisor state, runtime state, and optional project status output |
 
 ## Repository Layout
 
@@ -247,17 +251,25 @@ The template intentionally owns one source schema, one renderer, and one default
 
 ## Runtime Control
 
-For longer Codex CLI runs, the template can supervise a background session with structural stop conditions.
+For longer Codex CLI runs, the template can supervise a background session with structural stop conditions and an optional outer watchdog for crash recovery.
 
 - Configure runtime behavior in `project.config.json.autonomy`
+- Configure watchdog and hook behavior in `harness.config.json`
 - Detached runs use a repo-scoped Codex home under `data/runtime/codex-home/` to avoid inheriting workstation-global Codex state
 - On Windows, detached runtime sessions fall back from `workspace-write` to `danger-full-access` so shell startup can reach repo commands reliably
 - Start with `pnpm runtime:start`
+- Prefer `pnpm runtime:supervise` if you want the runtime relaunched after interruptions
 - Check state with `pnpm runtime:status`
 - Stop or resume with `pnpm runtime:stop` and `pnpm runtime:resume`
+- Stop or inspect the watchdog with `pnpm runtime:supervise:stop`, `pnpm runtime:supervise:status`, and `pnpm runtime:watch`
 - Set `autonomy.maxConsecutiveTerminalBlockers` if you want repeated policy or sandbox blockers to stop in `blocked` instead of looping
 - When the final milestone is fully verified and no later blueprint exists, the orchestrator should switch to `pnpm next-milestone:propose`
 - Read the [runtime control runbook](./docs/runbooks/runtime-control.md) for the status file and stop-condition details
+
+Downstream projects should keep project-specific behavior out of the template core and inject it with hooks:
+
+- `hooks.postIterationCommand` runs after each completed runtime cycle
+- `hooks.projectStatusCommand` prints repo-specific status inside `pnpm runtime:watch`
 
 ## Planner Publication Model
 

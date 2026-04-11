@@ -45,7 +45,11 @@
     "runtime:start": "tsx scripts/runtime.ts start",
     "runtime:status": "tsx scripts/runtime.ts status",
     "runtime:stop": "tsx scripts/runtime.ts stop",
-    "runtime:resume": "tsx scripts/runtime.ts resume"
+    "runtime:resume": "tsx scripts/runtime.ts resume",
+    "runtime:supervise": "tsx scripts/supervisor.ts start",
+    "runtime:supervise:status": "tsx scripts/supervisor.ts status",
+    "runtime:supervise:stop": "tsx scripts/supervisor.ts stop",
+    "runtime:watch": "tsx scripts/supervisor.ts watch"
   },
   "devDependencies": {
     "@types/node": "^22.14.1",

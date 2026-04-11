@@ -1,0 +1,13 @@
+{
+  "supervisor": {
+    "childCommand": null,
+    "workdir": ".",
+    "pollIntervalSeconds": 5,
+    "restartBackoffSeconds": 10,
+    "maxRestartsPerHour": 12
+  },
+  "hooks": {
+    "postIterationCommand": null,
+    "projectStatusCommand": null
+  }
+}

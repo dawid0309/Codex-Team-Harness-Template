@@ -11,7 +11,9 @@ import {
   type AutonomyConfig,
   type StopConditionId,
 } from "./project-config";
+import { readHarnessConfig } from "./harness-config";
 import { detectTerminalBlocker, type TerminalBlocker } from "./runtime-blockers";
+import { defaultHookStatus, type HookStatus } from "./runtime-shared";
 
 type RuntimeState =
   | "idle"
@@ -45,6 +47,7 @@ type RuntimeStatus = {
   lastExitCode: number | null;
   effectiveSandboxMode: string;
   lastCycleExecutedRepoCommand: boolean;
+  lastPostIterationHook: HookStatus | null;
 };
 
 type TaskBoardTask = {
@@ -142,6 +145,7 @@ function defaultStatus(config: AutonomyConfig = defaultAutonomyConfig()): Runtim
     lastExitCode: null,
     effectiveSandboxMode: config.sandboxMode,
     lastCycleExecutedRepoCommand: false,
+    lastPostIterationHook: defaultHookStatus(),
   };
 }
 
@@ -159,6 +163,12 @@ async function readRuntimeStatus(config?: AutonomyConfig): Promise<RuntimeStatus
   return {
     ...defaultStatus(config),
     ...loaded,
+    lastPostIterationHook: loaded.lastPostIterationHook
+      ? {
+          ...defaultHookStatus(loaded.lastPostIterationHook.command ?? null),
+          ...loaded.lastPostIterationHook,
+        }
+      : defaultHookStatus(),
   };
 }
 
@@ -266,6 +276,141 @@ function formatSummary(text: string | null | undefined): string | null {
 
   const singleLine = text.replace(/\s+/g, " ").trim();
   return singleLine.length > 240 ? `${singleLine.slice(0, 237)}...` : singleLine;
+}
+
+type ShellCommandResult = {
+  exitCode: number;
+  stdout: string;
+  stderr: string;
+};
+
+async function runShellCommand(
+  command: string,
+  cwd: string,
+  envAdditions: NodeJS.ProcessEnv = {},
+): Promise<ShellCommandResult> {
+  const env: NodeJS.ProcessEnv = {
+    ...process.env,
+    ...envAdditions,
+  };
+
+  return await new Promise<ShellCommandResult>((resolve, reject) => {
+    const child = spawn(command, {
+      cwd,
+      env,
+      shell: process.platform === "win32" ? process.env.ComSpec ?? "cmd.exe" : true,
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+
+    let stdout = "";
+    let stderr = "";
+
+    child.stdout.setEncoding("utf8");
+    child.stderr.setEncoding("utf8");
+    child.stdout.on("data", (chunk: string) => {
+      stdout += chunk;
+    });
+    child.stderr.on("data", (chunk: string) => {
+      stderr += chunk;
+    });
+    child.once("error", reject);
+    child.once("close", (code) => {
+      resolve({
+        exitCode: code ?? 1,
+        stdout: stdout.trim(),
+        stderr: stderr.trim(),
+      });
+    });
+  });
+}
+
+function summarizeHookOutput(result: ShellCommandResult): string {
+  const stdoutSummary = formatSummary(result.stdout);
+  const stderrSummary = formatSummary(result.stderr);
+  if (stdoutSummary && stderrSummary) {
+    return `${stdoutSummary} | stderr: ${stderrSummary}`;
+  }
+  if (stdoutSummary) {
+    return stdoutSummary;
+  }
+  if (stderrSummary) {
+    return `stderr: ${stderrSummary}`;
+  }
+  return `Hook exited with code ${result.exitCode}.`;
+}
+
+async function runPostIterationHook(
+  cycleNumber: number,
+  runtimeState: RuntimeState,
+  threadId: string | null,
+  cycleResult: CycleResult,
+  config: AutonomyConfig,
+) {
+  const harnessConfig = await readHarnessConfig();
+  const command = harnessConfig.hooks.postIterationCommand;
+  if (!command) {
+    return;
+  }
+
+  const startedAt = nowIso();
+  await updateRuntimeStatus(
+    (current) => ({
+      ...current,
+      lastHeartbeat: startedAt,
+      lastPostIterationHook: {
+        ...defaultHookStatus(command),
+        command,
+        startedAt,
+      },
+    }),
+    config,
+  );
+
+  try {
+    const result = await runShellCommand(command, root, {
+      HARNESS_ITERATION: String(cycleNumber),
+      HARNESS_RUNTIME_STATE: runtimeState,
+      HARNESS_THREAD_ID: threadId ?? "",
+      HARNESS_LAST_EXIT_CODE: String(cycleResult.exitCode),
+      HARNESS_REPO_COMMAND_EXECUTED: cycleResult.executedRepoCommand ? "1" : "0",
+      HARNESS_REPO_ROOT: root,
+    });
+    const finishedAt = nowIso();
+
+    await updateRuntimeStatus(
+      (current) => ({
+        ...current,
+        lastHeartbeat: finishedAt,
+        lastPostIterationHook: {
+          command,
+          startedAt,
+          finishedAt,
+          exitCode: result.exitCode,
+          succeeded: result.exitCode === 0,
+          summary: summarizeHookOutput(result),
+        },
+      }),
+      config,
+    );
+  } catch (error) {
+    const finishedAt = nowIso();
+    const message = error instanceof Error ? error.message : String(error);
+    await updateRuntimeStatus(
+      (current) => ({
+        ...current,
+        lastHeartbeat: finishedAt,
+        lastPostIterationHook: {
+          command,
+          startedAt,
+          finishedAt,
+          exitCode: null,
+          succeeded: false,
+          summary: formatSummary(message) ?? "Post-iteration hook failed.",
+        },
+      }),
+      config,
+    );
+  }
 }
 
 function actualCodexConfigPath() {
@@ -717,6 +862,16 @@ async function runWorker() {
       config,
     );
 
+    if (cycleResult.exitCode === 0) {
+      await runPostIterationHook(
+        status.cycleCount + 1,
+        nextState,
+        status.threadId,
+        cycleResult,
+        config,
+      );
+    }
+
     if (nextState === "completed" || nextState === "failed" || nextState === "blocked") {
       return;
     }
@@ -835,6 +990,8 @@ async function commandStatus() {
   console.log(`Last cycle executed repo command: ${effectiveStatus.lastCycleExecutedRepoCommand}`);
   console.log(`Terminal blocker streak: ${effectiveStatus.consecutiveTerminalBlockers}/${effectiveStatus.maxConsecutiveTerminalBlockers}`);
   console.log(`Last blocker signature: ${effectiveStatus.lastBlockerSignature ?? "n/a"}`);
+  console.log(`Post-iteration hook: ${effectiveStatus.lastPostIterationHook?.command ?? "n/a"}`);
+  console.log(`Post-iteration hook result: ${effectiveStatus.lastPostIterationHook?.summary ?? "n/a"}`);
   console.log(`Latest result: ${effectiveStatus.latestResultSummary ?? "n/a"}`);
   console.log(`Stdout log: ${effectiveStatus.stdoutLog}`);
   console.log(`Stderr log: ${effectiveStatus.stderrLog}`);
