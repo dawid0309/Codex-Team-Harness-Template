@@ -487,7 +487,10 @@ async function commandStatus() {
 async function commandStop() {
   const config = await readHarnessConfig();
   const status = await readSupervisorStatus(config);
+  const runtimeStatus = await readRuntimeStatus();
 
+  terminateProcess(runtimeStatus.activeChildPid);
+  terminateProcess(runtimeStatus.workerPid);
   terminateProcess(status.supervisorPid);
   await markRuntimeStopped("Runtime stopped by operator through supervisor control.");
 
