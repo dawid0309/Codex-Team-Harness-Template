@@ -1,0 +1,52 @@
+{
+  "version": 1,
+  "defaultAdapter": "foundry",
+  "artifactRoot": "data/harness",
+  "adapters": {
+    "foundry": {
+      "id": "foundry",
+      "label": "Foundry Adapter",
+      "description": "Repo-native adapter that plans from the task board, executes a Codex sprint, and evaluates with configured verification stages.",
+      "planner": {
+        "kind": "task-board",
+        "refreshCommand": "pnpm planner:refresh",
+        "taskBoardPath": "planning/task-board.json",
+        "milestonesPath": "planning/milestones.json"
+      },
+      "execution": {
+        "kind": "codex-cli",
+        "sandboxModeSource": "project.config.autonomy.sandboxMode",
+        "basePromptSource": "project.config.autonomy.basePrompt",
+        "resumePromptSource": "project.config.autonomy.resumePrompt",
+        "modelSource": "project.config.autonomy.model",
+        "defaultWriteScope": [
+          "src",
+          "tests",
+          "docs",
+          "planning",
+          "agents",
+          "agents-md",
+          "scripts",
+          "project.config.json",
+          "README.md"
+        ]
+      },
+      "evaluation": {
+        "kind": "verification-stages",
+        "projectConfigPath": "project.config.json"
+      },
+      "doctor": {
+        "requiredFiles": [
+          "harness.manifest.json",
+          "project.config.json",
+          "planning/milestones.json",
+          "planning/task-board.json"
+        ],
+        "requiredCommands": [
+          "pnpm --version",
+          "codex --version"
+        ]
+      }
+    }
+  }
+}

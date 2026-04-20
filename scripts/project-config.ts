@@ -1,6 +1,44 @@
 import { execSync } from "node:child_process";
-import { readFile, writeFile } from "node:fs/promises";
+import { existsSync } from "node:fs";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
+
+export type VerificationStage = {
+  id: string;
+  label: string;
+  command: string;
+  enabled: boolean;
+};
+
+export type VerificationConfig = {
+  stages: VerificationStage[];
+};
+
+export type AutonomyConfig = {
+  basePrompt: string;
+  resumePrompt: string;
+  sandboxMode: string;
+  model: string | null;
+};
+
+export type RepoTruthConfig = {
+  requiredRecords: string[];
+};
+
+export type IntentConfig = {
+  canonicalFiles: string[];
+};
+
+export type FeedbackConfig = {
+  observationsPath: string;
+  issueDraftDirectory: string;
+  verificationArtifactDirectory: string;
+};
+
+export type AgentsConfig = {
+  mode: "index";
+  maxLines: number;
+};
 
 export type ProjectConfig = {
   name: string;
@@ -16,33 +54,10 @@ export type ProjectConfig = {
   licenseHolder: string;
   verification?: VerificationConfig;
   autonomy?: AutonomyConfig;
-};
-
-export type VerificationStage = {
-  id: string;
-  label: string;
-  command: string;
-  enabled: boolean;
-};
-
-export type VerificationConfig = {
-  stages: VerificationStage[];
-};
-
-export type StopConditionId =
-  | "active_milestone_no_ready_or_in_progress"
-  | "active_milestone_all_done"
-  | "issue_exports_present"
-  | "milestone_complete_and_issue_exports_present";
-
-export type AutonomyConfig = {
-  basePrompt: string;
-  resumePrompt: string;
-  sandboxMode: string;
-  selectedStopCondition: StopConditionId;
-  issueExportDirectory: string;
-  model: string | null;
-  maxConsecutiveTerminalBlockers: number;
+  repoTruth?: RepoTruthConfig;
+  intent?: IntentConfig;
+  feedback?: FeedbackConfig;
+  agents?: AgentsConfig;
 };
 
 export const root = process.cwd();
@@ -83,12 +98,31 @@ function titleFromSlug(value: string): string {
     .join(" ");
 }
 
-export async function readProjectConfig(): Promise<ProjectConfig> {
-  return JSON.parse(await readFile(projectConfigPath, "utf8")) as ProjectConfig;
+function normalizePathList(values: string[] | undefined, fallback: string[]) {
+  const seen = new Set<string>();
+  const normalized = (values ?? fallback)
+    .map((value) => value.trim().replaceAll("\\", "/"))
+    .filter(Boolean)
+    .filter((value) => {
+      if (seen.has(value)) {
+        return false;
+      }
+      seen.add(value);
+      return true;
+    });
+
+  return normalized.length > 0 ? normalized : fallback;
 }
 
-export async function writeProjectConfig(config: ProjectConfig): Promise<void> {
-  await writeFile(projectConfigPath, `${JSON.stringify(config, null, 2)}\n`, "utf8");
+function renderList(items: string[]) {
+  return items.map((item) => `- \`${item}\``).join("\n");
+}
+
+async function ensureTextFile(filePath: string, content: string) {
+  await mkdir(path.dirname(filePath), { recursive: true });
+  if (!existsSync(filePath)) {
+    await writeFile(filePath, content, "utf8");
+  }
 }
 
 export function defaultVerificationConfig(): VerificationConfig {
@@ -110,6 +144,12 @@ export function defaultVerificationConfig(): VerificationConfig {
         id: "refresh-planner",
         label: "Refresh task board",
         command: "pnpm run planner:refresh",
+        enabled: true,
+      },
+      {
+        id: "issues-export",
+        label: "Export issue drafts",
+        command: "pnpm run issues:export",
         enabled: true,
       },
       {
@@ -135,11 +175,99 @@ export function defaultAutonomyConfig(): AutonomyConfig {
     resumePrompt:
       "Resume as the leader/orchestrator from repository state and the previous Codex thread. If no ready tasks exist, request planner output with `pnpm planner:propose`, inspect `planning/planner-output.json`, and publish only after accepting the proposal. If the active final milestone is fully verified and there is no later milestone blueprint, request `pnpm next-milestone:propose`, inspect `planning/next-milestone-output.json`, and publish only after accepting that proposal. Then advance the next meaningful published task and stop after a coherent, verifiable unit of work.",
     sandboxMode: "workspace-write",
-    selectedStopCondition: "milestone_complete_and_issue_exports_present",
-    issueExportDirectory: "docs/issues/harness",
     model: null,
-    maxConsecutiveTerminalBlockers: 3,
   };
+}
+
+export function defaultRepoTruthConfig(): RepoTruthConfig {
+  return {
+    requiredRecords: [
+      "project.config.json",
+      "docs/architecture/system.md",
+      "docs/intent/current.md",
+      "docs/feedback/loop.md",
+      "docs/feedback/verification/README.md",
+      "planning/milestones.json",
+      "planning/task-board.json",
+    ],
+  };
+}
+
+export function defaultIntentConfig(): IntentConfig {
+  return {
+    canonicalFiles: [
+      "docs/intent/current.md",
+      "docs/architecture/system.md",
+      "planning/milestones.json",
+      "planning/task-board.json",
+      "planning/planner-output.json",
+      "planning/next-milestone-output.json",
+    ],
+  };
+}
+
+export function defaultFeedbackConfig(): FeedbackConfig {
+  return {
+    observationsPath: "docs/issues/harness-observations.json",
+    issueDraftDirectory: "docs/issues/harness",
+    verificationArtifactDirectory: "docs/feedback/verification",
+  };
+}
+
+export function defaultAgentsConfig(): AgentsConfig {
+  return {
+    mode: "index",
+    maxLines: 80,
+  };
+}
+
+function applyConfigDefaults(input: Partial<ProjectConfig>): ProjectConfig {
+  const slug = (input.slug ?? "codex-harness-foundry").trim().toLowerCase().replace(/[^a-z0-9-_]+/g, "-");
+  const repoName = (input.repoName ?? slug).trim() || slug;
+  const owner = (input.owner ?? "your-github-user").trim() || "your-github-user";
+
+  return {
+    name: (input.name ?? titleFromSlug(slug)).trim() || titleFromSlug(slug),
+    slug,
+    goal: (input.goal ?? "Define the product in repo files and let Codex execute from that truth.").trim(),
+    stack: (input.stack ?? "Node.js 22, TypeScript, pnpm, PowerShell, and agents-md").trim(),
+    description: (input.description ?? `${titleFromSlug(slug)}: ${input.goal ?? ""}`).trim(),
+    targetUsers: (input.targetUsers ?? "Builders who want Codex to operate from repository state.").trim(),
+    successMetric: (input.successMetric ?? "A new repository can be initialized and verified in minutes.").trim(),
+    mvpBoundary: (input.mvpBoundary ?? "Repo-native context, planning, verification, and feedback loops.").trim(),
+    owner,
+    repoName,
+    licenseHolder: (input.licenseHolder ?? owner).trim() || owner,
+    verification: input.verification ?? defaultVerificationConfig(),
+    autonomy: {
+      ...defaultAutonomyConfig(),
+      ...input.autonomy,
+    },
+    repoTruth: {
+      requiredRecords: normalizePathList(input.repoTruth?.requiredRecords, defaultRepoTruthConfig().requiredRecords),
+    },
+    intent: {
+      canonicalFiles: normalizePathList(input.intent?.canonicalFiles, defaultIntentConfig().canonicalFiles),
+    },
+    feedback: {
+      ...defaultFeedbackConfig(),
+      ...input.feedback,
+    },
+    agents: {
+      ...defaultAgentsConfig(),
+      ...input.agents,
+      mode: "index",
+      maxLines: input.agents?.maxLines && input.agents.maxLines > 0 ? input.agents.maxLines : defaultAgentsConfig().maxLines,
+    },
+  };
+}
+
+export async function readProjectConfig(): Promise<ProjectConfig> {
+  return applyConfigDefaults(JSON.parse(await readFile(projectConfigPath, "utf8")) as Partial<ProjectConfig>);
+}
+
+export async function writeProjectConfig(config: ProjectConfig): Promise<void> {
+  await writeFile(projectConfigPath, `${JSON.stringify(applyConfigDefaults(config), null, 2)}\n`, "utf8");
 }
 
 export function deriveRepositoryMetadata(config: ProjectConfig) {
@@ -158,51 +286,57 @@ export function deriveRepositoryMetadata(config: ProjectConfig) {
   };
 }
 
+export function resolveIssueExportDirectory(config: ProjectConfig) {
+  return config.feedback?.issueDraftDirectory ?? defaultFeedbackConfig().issueDraftDirectory;
+}
+
 function projectMission(config: ProjectConfig) {
   return `<!-- agents-md: target=root, priority=100 -->
 # Project Mission
 
 - Project: \`${config.name}\`
 - Product goal: \`${config.goal}\`
-- Current phase: \`m1-foundation\`
-- North star: every Codex session should start from repo truth, not ad-hoc chat memory.
+- AGENTS mode: \`${config.agents?.mode ?? "index"}\`
+- Human role: design the environment, write intent into the repo, and review feedback
+- North star: every Codex session should start from repository truth instead of chat memory
 
-Primary references:
+Canonical intent files:
 
-- \`docs/architecture/system.md\`
-- \`planning/milestones.json\`
-- \`planning/task-board.json\`
-- \`planning/planner-output.json\`
-- \`planning/next-milestone-output.json\`
+${renderList(config.intent?.canonicalFiles ?? defaultIntentConfig().canonicalFiles)}
 `;
 }
 
 function rootProjectContext(config: ProjectConfig) {
+  const canonical = config.intent?.canonicalFiles ?? defaultIntentConfig().canonicalFiles;
+  const ordered = canonical.map((file, index) => `${index + 2}. \`${file}\``).join("\n");
+  const feedbackPosition = canonical.length + 2;
+  const agentsPosition = canonical.length + 3;
+
   return `<!-- agents-md: target=root, priority=100 -->
 # ${config.name} Codex Workbench
 
-This is the root operating context for the project.
+AGENTS.md is a directory page, not a handbook. Keep deep detail in the linked source files.
 
-Before doing substantial work, read:
+Read in order before substantial work:
 
-1. \`docs/architecture/system.md\`
-2. \`planning/milestones.json\`
-3. \`planning/task-board.json\`
-4. \`planning/planner-output.json\`
-5. \`planning/next-milestone-output.json\`
-6. the nearest role-specific \`AGENTS.md\`
+1. \`project.config.json\`
+${ordered}
+${feedbackPosition}. \`docs/feedback/loop.md\`
+${agentsPosition}. the nearest role-specific \`AGENTS.md\`
 
-Default working assumptions:
+Key commands:
 
-- Stack: \`${config.stack}\`
-- Collaboration mode: one main orchestrator thread plus on-demand subagents
+- \`pnpm verify\`
+- \`pnpm planner:next\`
+- \`pnpm issues:export\`
+- \`pnpm harness:worker:status\`
 `;
 }
 
 function architectureDoc(config: ProjectConfig) {
   return `# System Architecture
 
-Use this document as the canonical product brief for Codex. Before asking multiple agents to build in parallel, write down the smallest useful version of the system here.
+Use this document as the canonical product brief for Codex. AGENTS.md should point here instead of duplicating this content.
 
 ## Product Goal
 
@@ -247,6 +381,108 @@ List the important entities and contracts here before implementation starts. Goo
 `;
 }
 
+function intentDoc(config: ProjectConfig) {
+  return `# Current Intent
+
+Use this file to describe the next coherent delivery loop before the builder writes code.
+
+## Environment
+
+- Stack: ${config.stack}
+- Entry points: update for the subsystem you are about to change
+- Verification command: \`pnpm verify\`
+
+## Target Outcome
+
+- Describe the next smallest useful capability or refactor.
+- Name the acceptance signal a verifier can check mechanically.
+
+## Constraints
+
+- What must not change?
+- What product bar or compatibility promise must hold?
+
+## Feedback Hooks
+
+- Observation source: \`${config.feedback?.observationsPath ?? defaultFeedbackConfig().observationsPath}\`
+- Draft export directory: \`${resolveIssueExportDirectory(config)}\`
+- Verification artifacts: \`${config.feedback?.verificationArtifactDirectory ?? defaultFeedbackConfig().verificationArtifactDirectory}\`
+`;
+}
+
+function feedbackLoopDoc(config: ProjectConfig) {
+  return `# Feedback Loop
+
+The repository owns the delivery loop.
+
+1. Engineers design the environment and make the intended outcome explicit in \`docs/intent/current.md\`.
+2. Codex reads the canonical repo truth, executes the next task, and leaves evidence in the repo.
+3. Verifiers read the output, run \`pnpm verify\`, and write back task, review, or issue records.
+4. New problems become repo-first observations in \`${config.feedback?.observationsPath ?? defaultFeedbackConfig().observationsPath}\` before they become GitHub issues.
+
+Use the runbooks in \`docs/runbooks/\` when the loop needs manual help, not AGENTS.md.
+`;
+}
+
+function verificationArtifactsReadme(config: ProjectConfig) {
+  return `# Verification Artifacts
+
+Store tracked verification notes, transcripts, screenshots, and handoff evidence here when a change needs durable review context.
+
+- Canonical verify command: \`pnpm verify\`
+- Harness worker status command: \`pnpm harness:worker:status\`
+- Issue draft export: \`pnpm issues:export\`
+
+Keep generated caches and temporary logs outside this directory. This directory is for reviewable artifacts that belong in the repository.
+`;
+}
+
+function engineerLoopRunbook(config: ProjectConfig) {
+  return `# Engineer Loop
+
+Codex Harness Foundry is designed so engineers spend less time writing code and more time shaping the system Codex works inside.
+
+## Human Responsibilities
+
+1. Design the environment.
+   - Keep the repo structure, commands, and verification path trustworthy.
+   - Decide which artifacts are canonical and keep them visible in \`project.config.json\`.
+2. Write the intent down.
+   - Describe the current goal in \`docs/intent/current.md\`.
+   - Keep product detail in \`docs/architecture/system.md\` and planning detail in \`planning/\`.
+3. Read feedback and close the loop.
+   - Run \`pnpm verify\`.
+   - Update the task board, review notes, and issue observations.
+   - Export GitHub-facing drafts from \`${config.feedback?.observationsPath ?? defaultFeedbackConfig().observationsPath}\` into \`${resolveIssueExportDirectory(config)}\`.
+
+## Operating Rule
+
+If it is not represented in repository truth, the agent should not rely on it. Add or fix the repo record before asking Codex to continue.
+`;
+}
+
+function issueDraftReadme(config: ProjectConfig) {
+  return `# Harness Issue Drafts
+
+This folder contains repo-reviewed issue drafts exported from \`${config.feedback?.observationsPath ?? defaultFeedbackConfig().observationsPath}\`.
+
+Run \`pnpm issues:export\` after updating the observation source. Copy reviewed drafts to GitHub only after the repository version looks correct.
+`;
+}
+
+function defaultObservationFile(config: ProjectConfig) {
+  return `${JSON.stringify(
+    {
+      version: 1,
+      project: config.name,
+      source: "Repo-first issue observations maintained in the repository before GitHub sync.",
+      issues: [],
+    },
+    null,
+    2,
+  )}\n`;
+}
+
 function mitLicense(holder: string) {
   const year = new Date().getFullYear();
   return `MIT License
@@ -274,18 +510,19 @@ SOFTWARE.
 }
 
 export async function syncProjectFiles(config: ProjectConfig): Promise<void> {
-  const repo = deriveRepositoryMetadata(config);
+  const resolved = applyConfigDefaults(config);
+  const repo = deriveRepositoryMetadata(resolved);
 
-  await writeFile(path.join(root, "agents-md", "00-project.agents.md"), projectMission(config), "utf8");
-  await writeFile(path.join(root, "agents-md", "root", "00-project.agents.md"), rootProjectContext(config), "utf8");
-  await writeFile(path.join(root, "docs", "architecture", "system.md"), architectureDoc(config), "utf8");
-  await writeFile(path.join(root, "LICENSE"), mitLicense(config.licenseHolder), "utf8");
+  await writeFile(path.join(root, "agents-md", "00-project.agents.md"), projectMission(resolved), "utf8");
+  await writeFile(path.join(root, "agents-md", "root", "00-project.agents.md"), rootProjectContext(resolved), "utf8");
+  await writeFile(path.join(root, "docs", "architecture", "system.md"), architectureDoc(resolved), "utf8");
+  await writeFile(path.join(root, "LICENSE"), mitLicense(resolved.licenseHolder), "utf8");
   await writeFile(path.join(root, ".github", "CODEOWNERS"), `* @${repo.owner}\n`, "utf8");
 
   const packageJsonPath = path.join(root, "package.json");
   const packageJson = JSON.parse(await readFile(packageJsonPath, "utf8")) as Record<string, unknown>;
-  packageJson.name = config.slug;
-  packageJson.description = config.description;
+  packageJson.name = resolved.slug;
+  packageJson.description = resolved.description;
   packageJson.repository = {
     type: "git",
     url: `git+${repo.repositoryUrl}.git`,
@@ -293,26 +530,28 @@ export async function syncProjectFiles(config: ProjectConfig): Promise<void> {
   packageJson.bugs = { url: repo.bugsUrl };
   packageJson.homepage = repo.homepageUrl;
   await writeFile(packageJsonPath, `${JSON.stringify(packageJson, null, 2)}\n`, "utf8");
+
+  const feedback = resolved.feedback ?? defaultFeedbackConfig();
+  await ensureTextFile(path.join(root, "docs", "intent", "current.md"), intentDoc(resolved));
+  await ensureTextFile(path.join(root, "docs", "feedback", "loop.md"), feedbackLoopDoc(resolved));
+  await ensureTextFile(
+    path.join(root, feedback.verificationArtifactDirectory, "README.md"),
+    verificationArtifactsReadme(resolved),
+  );
+  await ensureTextFile(path.join(root, "docs", "runbooks", "engineer-loop.md"), engineerLoopRunbook(resolved));
+  await ensureTextFile(path.join(root, feedback.observationsPath), defaultObservationFile(resolved));
+  await ensureTextFile(path.join(root, resolveIssueExportDirectory(resolved), "README.md"), issueDraftReadme(resolved));
 }
 
 export function normalizeConfig(input: Partial<ProjectConfig>, existing: ProjectConfig): ProjectConfig {
-  const slug = (input.slug ?? existing.slug).trim().toLowerCase().replace(/[^a-z0-9-_]+/g, "-");
-  const repoName = (input.repoName ?? existing.repoName).trim() || slug;
-  const owner = (input.owner ?? existing.owner).trim() || existing.owner;
-
-  return {
-    name: (input.name ?? existing.name).trim() || titleFromSlug(slug),
-    slug,
-    goal: (input.goal ?? existing.goal).trim(),
-    stack: (input.stack ?? existing.stack).trim(),
-    description: (input.description ?? existing.description).trim(),
-    targetUsers: (input.targetUsers ?? existing.targetUsers).trim(),
-    successMetric: (input.successMetric ?? existing.successMetric).trim(),
-    mvpBoundary: (input.mvpBoundary ?? existing.mvpBoundary).trim(),
-    owner,
-    repoName,
-    licenseHolder: (input.licenseHolder ?? existing.licenseHolder ?? owner).trim() || owner,
-    verification: input.verification ?? existing.verification ?? defaultVerificationConfig(),
-    autonomy: input.autonomy ?? existing.autonomy ?? defaultAutonomyConfig(),
-  };
+  return applyConfigDefaults({
+    ...existing,
+    ...input,
+    verification: input.verification ?? existing.verification,
+    autonomy: input.autonomy ?? existing.autonomy,
+    repoTruth: input.repoTruth ?? existing.repoTruth,
+    intent: input.intent ?? existing.intent,
+    feedback: input.feedback ?? existing.feedback,
+    agents: input.agents ?? existing.agents,
+  });
 }

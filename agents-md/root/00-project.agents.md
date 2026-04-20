@@ -1,18 +1,23 @@
 <!-- agents-md: target=root, priority=100 -->
 # Codex Harness Foundry Codex Workbench
 
-This is the root operating context for the project.
+AGENTS.md is a directory page, not a handbook. Keep deep detail in the linked source files.
 
-Before doing substantial work, read:
+Read in order before substantial work:
 
-1. `docs/architecture/system.md`
-2. `planning/milestones.json`
-3. `planning/task-board.json`
-4. `planning/planner-output.json`
-5. `planning/next-milestone-output.json`
-6. the nearest role-specific `AGENTS.md`
+1. `project.config.json`
+2. `docs/intent/current.md`
+3. `docs/architecture/system.md`
+4. `planning/milestones.json`
+5. `planning/task-board.json`
+6. `planning/planner-output.json`
+7. `planning/next-milestone-output.json`
+8. `docs/feedback/loop.md`
+9. the nearest role-specific `AGENTS.md`
 
-Default working assumptions:
+Key commands:
 
-- Stack: `Node.js 22, TypeScript, pnpm, PowerShell, and agents-md`
-- Collaboration mode: one main orchestrator thread plus on-demand subagents
+- `pnpm verify`
+- `pnpm planner:next`
+- `pnpm issues:export`
+- `pnpm harness:worker:status`

@@ -25,22 +25,22 @@
     },
     {
       "number": 7,
-      "title": "Add background runtime controls for Codex CLI",
+      "title": "Add background harness worker controls for Codex CLI",
       "batch": "batch2",
       "status": "landed",
-      "summary": "Provide start, status, stop, and resume commands for a Codex-CLI-specific background runtime so longer runs can be supervised from repo state.",
+      "summary": "Provide start, status, stop, and resume commands for a background harness worker so longer runs can be supervised through the generic harness kernel.",
       "linkedIssues": [10],
       "repoEvidence": [
-        "The template already encodes planning state in planning/task-board.json and project.config.json.",
-        "Codex CLI supports non-interactive exec and resume flows that can be wrapped by the template."
+        "The harness kernel already defines run specs, contracts, evaluation artifacts, and live state.",
+        "Codex CLI supports non-interactive exec and resume flows that can be wrapped by a worker process without reviving repo-native execution logic."
       ],
       "implementationNotes": [
-        "Add a runtime controller specific to codex exec and codex exec resume.",
-        "Persist runtime status in ignored files under data/runtime/.",
-        "Report thread id, process handles, heartbeats, stop condition, and latest result summary."
+        "Add a worker controller around harness run and harness resume.",
+        "Persist worker status in ignored files under data/harness/.",
+        "Report run id, thread id, process handles, latest checkpoint, and latest result summary."
       ],
       "closureCondition": [
-        "Background runtime commands land and runtime state can be queried and controlled from the repo."
+        "Background harness worker commands land and worker state can be queried and controlled from the repo."
       ]
     },
     {
@@ -85,22 +85,22 @@
     },
     {
       "number": 10,
-      "title": "Use structural stop conditions for autonomy",
+      "title": "Replace repo-native stop loops with one-cycle harness worker policy",
       "batch": "batch2",
       "status": "landed",
-      "summary": "Make autonomous stopping decisions from repository state instead of free-form text heuristics.",
+      "summary": "Replace repo-native autonomous stop predicates with a single-cycle worker policy so the harness kernel stays generic.",
       "linkedIssues": [7],
       "repoEvidence": [
-        "planning/task-board.json already exposes milestone and task states that can drive stop predicates.",
-        "Issue export artifacts can be verified structurally by checking the generated directory."
+        "The harness kernel already persists checkpoints and live state for each run.",
+        "Repo-native stop predicates are specific to Foundry and should not be embedded in a generic harness worker."
       ],
       "implementationNotes": [
-        "Add project.config.json.autonomy with the selected stop condition.",
-        "Evaluate stop predicates against planning/task-board.json and docs/issues/harness/.",
-        "Implement stop logic together with the Codex CLI runtime controller."
+        "Remove selected stop-condition fields from project.config.json.autonomy.",
+        "Make each background worker run own one coherent harness cycle.",
+        "Keep future continuation policy as an explicit harness feature rather than an implicit background loop."
       ],
       "closureCondition": [
-        "The runtime can stop from configured repo-state predicates without relying on natural-language completion detection."
+        "The background worker exits after one coherent harness cycle without any repo-native stop-condition configuration."
       ]
     },
     {
@@ -124,46 +124,6 @@
       ]
     },
     {
-      "number": 14,
-      "title": "Detached runtime inherits global shell and Codex state noise",
-      "batch": "followup",
-      "status": "landed",
-      "summary": "Isolate detached Codex runtime sessions inside a repo-scoped Codex home so background runs do not inherit workstation-global shell state, Codex config noise, or unrelated local integrations.",
-      "linkedIssues": [15],
-      "repoEvidence": [
-        "Detached runtime sessions previously inherited the operator's global shell and Codex environment.",
-        "Background runs should be reproducible from repository state instead of depending on machine-specific profiles or global Codex state."
-      ],
-      "implementationNotes": [
-        "Create a repo-scoped runtime home under data/runtime/codex-home and write a filtered config.toml for detached runs.",
-        "Sanitize inherited environment variables so CODEX_HOME, HOME, and USERPROFILE point at the runtime home.",
-        "Force detached Codex exec runs to use shell_environment_policy.inherit=none so background cycles start from repo-scoped state."
-      ],
-      "closureCondition": [
-        "Detached runtime sessions run from a repo-scoped Codex home and stop inheriting workstation-global shell or Codex state noise."
-      ]
-    },
-    {
-      "number": 15,
-      "title": "Runtime keeps looping after repeated unrecoverable blockers",
-      "batch": "followup",
-      "status": "landed",
-      "summary": "Detect terminal blockers from runtime event output and stop background sessions in a blocked state after the configured retry budget instead of letting them spin indefinitely.",
-      "linkedIssues": [14],
-      "repoEvidence": [
-        "Codex CLI emits policy and sandbox failures inside stdout JSON event payloads, not just in the last assistant message.",
-        "Without structural blocker tracking, the runtime can repeat the same unrecoverable failure across multiple cycles."
-      ],
-      "implementationNotes": [
-        "Inspect command_execution event output from the runtime stdout stream when classifying blockers.",
-        "Track consecutive blocker signatures in runtime status and expose the configured retry budget in project.config.json.autonomy.maxConsecutiveTerminalBlockers.",
-        "Move the runtime to blocked after the same terminal blocker repeats for the configured number of cycles, then allow resume once the operator fixes the constraint."
-      ],
-      "closureCondition": [
-        "Repeated unrecoverable blockers are detected from runtime event output and transition the runtime to blocked instead of looping."
-      ]
-    },
-    {
       "number": 17,
       "title": "Propose the next milestone when the final milestone is fully verified",
       "batch": "followup",
@@ -181,46 +141,6 @@
       ],
       "closureCondition": [
         "The repo can generate and accept a next milestone proposal after the current final milestone is fully verified, and the workflow is documented for orchestrator use."
-      ]
-    },
-    {
-      "number": 19,
-      "title": "Runtime misclassifies policy rejections as read-only blockers",
-      "batch": "followup",
-      "status": "landed",
-      "summary": "Make runtime blocker classification precedence-aware so explicit policy and helper-launch rejections win over generic read-only or write-capability text.",
-      "linkedIssues": [15],
-      "repoEvidence": [
-        "The runtime already classifies blockers from last-message, stdout event output, and stderr text.",
-        "Generic write-capability wording can coexist with more specific policy or helper-launch failures in the same runtime cycle."
-      ],
-      "implementationNotes": [
-        "Move blocker classification into a dedicated helper module so it can be verified directly.",
-        "Prioritize policy rejection and helper-launch failure patterns before read-only and write-capability patterns.",
-        "Treat helper-launch cancellation and ShellExecuteExW setup-helper failures as policy-side blockers for operator diagnostics."
-      ],
-      "closureCondition": [
-        "Runtime status reports policy-side failures as policy-rejection instead of workspace-read-only when both kinds of text appear together."
-      ]
-    },
-    {
-      "number": 21,
-      "title": "Windows detached runtime sandbox breaks shell startup and can false-complete",
-      "batch": "followup",
-      "status": "landed",
-      "summary": "Make the Windows detached runtime resilient to shell-sandbox startup failures and forbid completed status when no repo-local command actually ran.",
-      "linkedIssues": [19],
-      "repoEvidence": [
-        "Detached runtime shell startup can fail on Windows before any repository command executes.",
-        "Structural stop predicates alone are not enough to prove useful runtime progress if the cycle never reaches repo-local command execution."
-      ],
-      "implementationNotes": [
-        "Keep CODEX_HOME repo-scoped but preserve the real Windows profile directories for detached runs.",
-        "Fall back from workspace-write to danger-full-access for Windows detached runtime sessions so shell startup can reach repo commands reliably.",
-        "Classify shell-startup failures explicitly and prevent completed state when a cycle exits before any repo-local command executes."
-      ],
-      "closureCondition": [
-        "Windows detached runtime status reports shell-startup failures accurately and no longer enters completed when a cycle never executes a repo-local command."
       ]
     }
   ]

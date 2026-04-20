@@ -31,6 +31,12 @@
         "enabled": true
       },
       {
+        "id": "issues-export",
+        "label": "Export issue drafts",
+        "command": "pnpm run issues:export",
+        "enabled": true
+      },
+      {
         "id": "typecheck",
         "label": "Typecheck",
         "command": "pnpm run typecheck",
@@ -48,9 +54,36 @@
     "basePrompt": "Act as the leader/orchestrator. Read repository truth, request planner publication with `pnpm planner:propose` when no ready tasks exist, inspect `planning/planner-output.json`, and accept it with `pnpm planner:publish` when appropriate. If the active final milestone is fully verified and there is no later milestone blueprint, request `pnpm next-milestone:propose`, inspect `planning/next-milestone-output.json`, and accept it with `pnpm next-milestone:publish` when appropriate. Then advance the highest-leverage published task and leave the repo in a verifiable state.",
     "resumePrompt": "Resume as the leader/orchestrator from repository state and the previous Codex thread. If no ready tasks exist, request planner output with `pnpm planner:propose`, inspect `planning/planner-output.json`, and publish only after accepting the proposal. If the active final milestone is fully verified and there is no later milestone blueprint, request `pnpm next-milestone:propose`, inspect `planning/next-milestone-output.json`, and publish only after accepting that proposal. Then advance the next meaningful published task and stop after a coherent, verifiable unit of work.",
     "sandboxMode": "workspace-write",
-    "selectedStopCondition": "milestone_complete_and_issue_exports_present",
-    "issueExportDirectory": "docs/issues/harness",
-    "model": null,
-    "maxConsecutiveTerminalBlockers": 3
+    "model": null
+  },
+  "repoTruth": {
+    "requiredRecords": [
+      "project.config.json",
+      "docs/architecture/system.md",
+      "docs/intent/current.md",
+      "docs/feedback/loop.md",
+      "docs/feedback/verification/README.md",
+      "planning/milestones.json",
+      "planning/task-board.json"
+    ]
+  },
+  "intent": {
+    "canonicalFiles": [
+      "docs/intent/current.md",
+      "docs/architecture/system.md",
+      "planning/milestones.json",
+      "planning/task-board.json",
+      "planning/planner-output.json",
+      "planning/next-milestone-output.json"
+    ]
+  },
+  "feedback": {
+    "observationsPath": "docs/issues/harness-observations.json",
+    "issueDraftDirectory": "docs/issues/harness",
+    "verificationArtifactDirectory": "docs/feedback/verification"
+  },
+  "agents": {
+    "mode": "index",
+    "maxLines": 80
   }
 }

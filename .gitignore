@@ -7,7 +7,7 @@ coverage/
 .env
 .env.local
 *.tsbuildinfo
-data/runtime/
+data/harness/
 AGENTS.md
 planning/AGENTS.md
 scripts/AGENTS.md

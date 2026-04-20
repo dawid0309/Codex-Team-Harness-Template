@@ -1,4 +1,4 @@
-# Issue #10: Use structural stop conditions for autonomy
+# Issue #10: Replace repo-native stop loops with one-cycle harness worker policy
 
 - Batch: batch2
 - Status: landed
@@ -6,20 +6,19 @@
 
 ## Summary
 
-Make autonomous stopping decisions from repository state instead of free-form text heuristics.
+Replace repo-native autonomous stop predicates with a single-cycle worker policy so the harness kernel stays generic.
 
 ## Repo Evidence
 
-- planning/task-board.json already exposes milestone and task states that can drive stop predicates.
-- Issue export artifacts can be verified structurally by checking the generated directory.
+- The harness kernel already persists checkpoints and live state for each run.
+- Repo-native stop predicates are specific to Foundry and should not be embedded in a generic harness worker.
 
 ## Implementation Notes
 
-- Add project.config.json.autonomy with the selected stop condition.
-- Evaluate stop predicates against planning/task-board.json and docs/issues/harness/.
-- Implement stop logic together with the Codex CLI runtime controller.
+- Remove selected stop-condition fields from project.config.json.autonomy.
+- Make each background worker run own one coherent harness cycle.
+- Keep future continuation policy as an explicit harness feature rather than an implicit background loop.
 
 ## Closure Condition
 
-- The runtime can stop from configured repo-state predicates without relying on natural-language completion detection.
-
+- The background worker exits after one coherent harness cycle without any repo-native stop-condition configuration.

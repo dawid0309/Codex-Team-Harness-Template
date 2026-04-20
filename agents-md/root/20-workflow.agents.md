@@ -10,4 +10,4 @@ The main lead agent should operate in this order:
 5. Accept planner output into the task board only after verifying it matches repository truth, and accept next-milestone output into `planning/milestones.json` only after the same review.
 6. After a builder finishes, run the shared verification gate.
 7. Write the result back into the task board, handoff, and review or verification records.
-8. Continue automatically unless a stop condition is reached.
+8. End the current loop after one coherent harness cycle; start a new worker cycle only when the next run is intentional.

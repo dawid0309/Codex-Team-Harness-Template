@@ -4,7 +4,7 @@
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](./LICENSE)
 [![Template Repository](https://img.shields.io/badge/template-ready-blue.svg)](https://github.com/dawid0309/Codex-Harness-Foundry/generate)
 
-**An open-source Codex workbench that helps AI code like a small product team, with repo-native context, milestone planning, task orchestration, and verification built in.**
+**An open-source Codex workbench where engineers design the environment, write intent into the repo, and let AI agents execute against repository truth.**
 
 Chinese assist: a repo-native Codex workbench for long-running projects, with context, milestones, task orchestration, and verification built into the repository.
 
@@ -26,9 +26,10 @@ Typical AI coding workflows keep critical context in chat, not in the repository
 Codex Harness Foundry fixes that by storing context in repo files, advancing work through milestones and task cards, and enforcing a shared verify path.
 
 - Repo-native context from `project.config.json`, `AGENTS.md`, architecture docs, milestones, and the task board.
+- `AGENTS.md` as a short directory page that points to canonical source files instead of duplicating them.
 - A planner -> builder -> verifier operating model with explicit ownership boundaries.
 - Persistent execution state through milestone blueprints, task cards, and next-task recommendation.
-- Verification as a first-class gate instead of a best-effort afterthought.
+- Verification and feedback loops as first-class gates instead of best-effort afterthoughts.
 
 ## How It Works
 
@@ -48,7 +49,7 @@ flowchart LR
     next --> planner
 ```
 
-Codex Harness Foundry turns a repo into an operating surface for Codex: configure the project, generate repo-aware instructions, refresh task state, verify the workflow, and keep moving from the next recommended task.
+Codex Harness Foundry turns a repo into an operating surface for Codex: configure the environment, record the current intent, verify the feedback loop, and keep moving from the next recommended task.
 
 ## 30-Second Demo
 
@@ -94,6 +95,7 @@ pnpm issues:export
 ```
 
 6. For deeper setup, follow the [fork and initialize runbook](./docs/runbooks/fork-and-init.md).
+7. For the human role in the loop, read the [engineer loop runbook](./docs/runbooks/engineer-loop.md).
 
 ## Concrete Use Case
 
@@ -107,9 +109,9 @@ Before Foundry:
 
 With Foundry:
 
-- The project identity, architecture, milestones, and task board live in the repo.
+- The project identity, environment, intent, milestones, and task board live in the repo.
 - Codex can operate with planner / builder / verifier boundaries instead of one undifferentiated loop.
-- Verification, next-task recommendation, and role ownership stay visible across the whole project.
+- Verification, next-task recommendation, role ownership, and issue feedback stay visible across the whole project.
 
 This is for teams who want Codex to keep progressing through a real software project, not just produce isolated code snippets.
 
@@ -133,10 +135,10 @@ This is for teams who want Codex to keep progressing through a real software pro
 
 | Dimension | Typical AI Coding Workflow | Codex Harness Foundry |
 | --- | --- | --- |
-| Source of context | Chat history and ad hoc prompts | Repo-native context from project config, `AGENTS.md`, architecture docs, milestones, and task board |
+| Source of context | Chat history and ad hoc prompts | Repo-native context from project config, index-style `AGENTS.md`, architecture docs, intent docs, milestones, and task board |
 | Task tracking | Implicit or manual | Milestones, task blueprints, live task-board state, and next-task recommendation |
 | Role boundaries | Single mixed workflow | Planner / builder / verifier operating model with explicit ownership |
-| Verification | Optional and inconsistent | Standard verify flow: sync, compose `AGENTS.md`, refresh planner, typecheck, smoke |
+| Verification | Optional and inconsistent | Standard verify flow validates environment, intent, issue export, typecheck, and smoke |
 | Handoff persistence | Mostly lost in chat | Designed to preserve context, handoffs, decisions, and review artifacts in the repo |
 | Fit for long-running work | Weak once context grows | Built for repeatable, milestone-driven project progression |
 
@@ -165,14 +167,18 @@ Full reference:
 | `pnpm tasks:plan` | Show the current actionable task plan |
 | `pnpm tasks:status` | Show the task board summary and task list |
 | `pnpm tasks:update -- <task-id> <status>` | Update a task status in `planning/task-board.json` |
-| `pnpm issues:export` | Generate deterministic issue-response drafts into `docs/issues/harness/` |
+| `pnpm issues:export` | Generate deterministic repo-first issue drafts into the configured feedback directory |
 | `pnpm smoke` | Validate that planning files are structurally usable |
 | `pnpm typecheck` | Type-check the automation scripts |
 | `pnpm verify` | Run the config-backed verification gate from `project.config.json.verification` |
-| `pnpm runtime:start` | Start a Codex-CLI-specific background runtime |
-| `pnpm runtime:status` | Inspect runtime state from `data/runtime/` |
-| `pnpm runtime:stop` | Stop the background runtime and clear active process handles |
-| `pnpm runtime:resume` | Resume a stopped, interrupted, failed, or blocked runtime session |
+| `pnpm harness:run` | Execute one full harness cycle in the foreground |
+| `pnpm harness:eval -- --run-id <run-id>` | Re-run the evaluator for an existing harness run |
+| `pnpm harness:resume -- --run-id <run-id>` | Resume an interrupted harness run from its checkpoint |
+| `pnpm harness:doctor` | Validate adapter prerequisites and core harness files |
+| `pnpm harness:worker:start` | Start a background harness worker for one coherent cycle |
+| `pnpm harness:worker:status` | Inspect background harness worker state from `data/harness/` |
+| `pnpm harness:worker:stop` | Stop the active background harness worker |
+| `pnpm harness:worker:resume` | Resume the latest or specified background harness run |
 
 ## Repository Layout
 
@@ -207,7 +213,9 @@ No. A solo builder can still use the planner / builder / verifier model as a dis
 At minimum, initialize the project and then review these files before using the template for a real product:
 
 - `project.config.json`
+- `docs/intent/current.md`
 - `docs/architecture/system.md`
+- `docs/feedback/loop.md`
 - `planning/milestones.json`
 - `agents-md/00-project.agents.md`
 - `agents-md/30-product.agents.md`
@@ -224,13 +232,14 @@ If you derive a new product from this template, treat `src/` and `tests/` as the
 - `command`
 - `enabled`
 
-The default template stages still:
+The default template stages now:
 
 1. syncs project metadata from `project.config.json`
 2. recomposes `AGENTS.md`
 3. refreshes the task board
-4. type-checks the automation scripts
-5. runs a smoke validation of the planning files
+4. exports repo-first issue drafts
+5. type-checks the automation scripts
+6. runs a smoke validation of environment, intent, and feedback records
 
 If you extend the template into a real product, add your app-specific checks to the same verification path rather than creating separate hidden gates.
 
@@ -238,26 +247,23 @@ If you extend the template into a real product, add your app-specific checks to 
 
 Issue planning notes can live in the repo and still export cleanly to GitHub-facing Markdown.
 
-- Track observations in `docs/issues/harness-observations.json`
+- Track observations in `project.config.json.feedback.observationsPath`
 - Generate drafts with `pnpm issues:export`
-- Review generated files in `docs/issues/harness/`
+- Review generated files in `project.config.json.feedback.issueDraftDirectory`
 - Follow the [issue export runbook](./docs/runbooks/issues-export.md) when mapping drafts to GitHub issues
 
 The template intentionally owns one source schema, one renderer, and one default export path so issue replies do not drift across multiple scripts.
 
-## Runtime Control
+## Harness Worker
 
-For longer Codex CLI runs, the template can supervise a background session with structural stop conditions.
+For longer Codex CLI runs, the template can supervise one background harness cycle at a time.
 
-- Configure runtime behavior in `project.config.json.autonomy`
-- Detached runs use a repo-scoped Codex home under `data/runtime/codex-home/` to avoid inheriting workstation-global Codex state
-- On Windows, detached runtime sessions fall back from `workspace-write` to `danger-full-access` so shell startup can reach repo commands reliably
-- Start with `pnpm runtime:start`
-- Check state with `pnpm runtime:status`
-- Stop or resume with `pnpm runtime:stop` and `pnpm runtime:resume`
-- Set `autonomy.maxConsecutiveTerminalBlockers` if you want repeated policy or sandbox blockers to stop in `blocked` instead of looping
-- When the final milestone is fully verified and no later blueprint exists, the orchestrator should switch to `pnpm next-milestone:propose`
-- Read the [runtime control runbook](./docs/runbooks/runtime-control.md) for the status file and stop-condition details
+- Configure execution prompts and sandbox behavior in `project.config.json.autonomy`
+- Use `harness.manifest.json` to declare planner, execution, evaluator, and doctor behavior
+- Start with `pnpm harness:worker:start`
+- Check state with `pnpm harness:worker:status`
+- Stop or resume with `pnpm harness:worker:stop` and `pnpm harness:worker:resume`
+- Read the [harness worker runbook](./docs/runbooks/harness-worker.md) for the worker status file and lifecycle details
 
 ## Planner Publication Model
 

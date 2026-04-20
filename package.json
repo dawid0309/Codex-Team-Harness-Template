@@ -26,6 +26,15 @@
     "verification"
   ],
   "scripts": {
+    "harness": "tsx scripts/harness.ts",
+    "harness:run": "tsx scripts/harness.ts run",
+    "harness:eval": "tsx scripts/harness.ts eval",
+    "harness:resume": "tsx scripts/harness.ts resume",
+    "harness:doctor": "tsx scripts/harness.ts doctor",
+    "harness:worker:start": "tsx scripts/harness-worker.ts start",
+    "harness:worker:status": "tsx scripts/harness-worker.ts status",
+    "harness:worker:stop": "tsx scripts/harness-worker.ts stop",
+    "harness:worker:resume": "tsx scripts/harness-worker.ts resume",
     "sync:project": "tsx scripts/sync-project.ts",
     "init:project": "tsx scripts/init-project.ts",
     "compose:agents": "pnpm exec agents-md compose",
@@ -41,11 +50,7 @@
     "issues:export": "tsx scripts/issues-export.ts",
     "smoke": "tsx scripts/smoke.ts",
     "typecheck": "tsc --project tsconfig.json",
-    "verify": "powershell -ExecutionPolicy Bypass -File scripts/verify.ps1",
-    "runtime:start": "tsx scripts/runtime.ts start",
-    "runtime:status": "tsx scripts/runtime.ts status",
-    "runtime:stop": "tsx scripts/runtime.ts stop",
-    "runtime:resume": "tsx scripts/runtime.ts resume"
+    "verify": "powershell -ExecutionPolicy Bypass -File scripts/verify.ps1"
   },
   "devDependencies": {
     "@types/node": "^22.14.1",
