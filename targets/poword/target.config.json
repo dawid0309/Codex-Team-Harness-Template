@@ -1,0 +1,52 @@
+{
+  "id": "poword",
+  "label": "Poword",
+  "description": "Official Poword product repository driven externally by Codex Harness Foundry.",
+  "casesPath": "cases.json",
+  "execution": {
+    "basePrompt": "Act as a disciplined senior engineer working inside the Poword product repository. Read repository truth first, make one coherent and reviewable unit of progress, stay inside the allowed write scope, and leave the repo ready for external evaluation.",
+    "resumePrompt": "Resume the previous Poword development run from repository truth and the saved thread. Continue the same case, make one coherent and reviewable unit of progress, and leave the repo ready for external evaluation.",
+    "sandboxMode": "danger-full-access",
+    "model": null,
+    "defaultWriteScope": [
+      "src",
+      "docs",
+      "pom.xml",
+      "README.md"
+    ]
+  },
+  "evaluation": {
+    "commands": [
+      {
+        "id": "java-version",
+        "label": "Java version",
+        "command": "java -version"
+      },
+      {
+        "id": "maven-compile",
+        "label": "Maven compile",
+        "command": "powershell -NoProfile -Command \"if (Test-Path '.\\\\mvnw.cmd') { .\\\\mvnw.cmd -q -DskipTests compile; exit $LASTEXITCODE } elseif (Get-Command mvn -ErrorAction SilentlyContinue) { mvn -q -DskipTests compile; exit $LASTEXITCODE } else { Write-Error 'Maven or mvnw.cmd is required'; exit 1 }\""
+      }
+    ]
+  },
+  "planning": {
+    "enabled": true,
+    "batchSize": 3,
+    "basePrompt": "Plan the next small batch of Poword product work from repository truth. Read the provided context packet, avoid repeating verified work, prefer one concrete next implementation case followed by adjacent follow-up cases, and keep every case sized for one coherent harness cycle.",
+    "model": null,
+    "maxRecentHandoffs": 5,
+    "firstGeneratedStatus": "ready",
+    "remainingGeneratedStatus": "backlog"
+  },
+  "doctor": {
+    "requiredFiles": [
+      "pom.xml",
+      "src/main/java",
+      ".git"
+    ],
+    "requiredCommands": [
+      "java -version",
+      "powershell -NoProfile -Command \"if (Test-Path '.\\\\mvnw.cmd') { Write-Output 'mvnw.cmd'; exit 0 } elseif (Get-Command mvn -ErrorAction SilentlyContinue) { Write-Output 'mvn'; exit 0 } else { Write-Error 'Maven or mvnw.cmd is required'; exit 1 }\""
+    ]
+  }
+}

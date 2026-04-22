@@ -35,6 +35,7 @@
     "harness:worker:status": "tsx scripts/harness-worker.ts status",
     "harness:worker:stop": "tsx scripts/harness-worker.ts stop",
     "harness:worker:resume": "tsx scripts/harness-worker.ts resume",
+    "harness:dashboard": "tsx scripts/harness-dashboard.ts",
     "sync:project": "tsx scripts/sync-project.ts",
     "init:project": "tsx scripts/init-project.ts",
     "compose:agents": "pnpm exec agents-md compose",

@@ -171,14 +171,15 @@ Full reference:
 | `pnpm smoke` | Validate that planning files are structurally usable |
 | `pnpm typecheck` | Type-check the automation scripts |
 | `pnpm verify` | Run the config-backed verification gate from `project.config.json.verification` |
-| `pnpm harness:run` | Execute one full harness cycle in the foreground |
-| `pnpm harness:eval -- --run-id <run-id>` | Re-run the evaluator for an existing harness run |
-| `pnpm harness:resume -- --run-id <run-id>` | Resume an interrupted harness run from its checkpoint |
-| `pnpm harness:doctor` | Validate adapter prerequisites and core harness files |
-| `pnpm harness:worker:start` | Start a background harness worker for one coherent cycle |
-| `pnpm harness:worker:status` | Inspect background harness worker state from `data/harness/` |
-| `pnpm harness:worker:stop` | Stop the active background harness worker |
-| `pnpm harness:worker:resume` | Resume the latest or specified background harness run |
+| `pnpm harness:run -- --target <target-id>` | Execute one full harness cycle against a registered target repo in the foreground |
+| `pnpm harness:eval -- --target <target-id> --run-id <run-id>` | Re-run the evaluator for an existing target run |
+| `pnpm harness:resume -- --target <target-id> --run-id <run-id>` | Resume an interrupted target run from its checkpoint |
+| `pnpm harness:doctor -- --target <target-id>` | Validate adapter prerequisites and target registration health |
+| `pnpm harness:worker:start -- --target <target-id>` | Start a background harness worker that keeps advancing ready work for a target |
+| `pnpm harness:worker:status -- --target <target-id>` | Inspect target-scoped background harness worker state from `data/harness/targets/<target-id>/` |
+| `pnpm harness:worker:stop -- --target <target-id>` | Stop the active background harness worker for a target |
+| `pnpm harness:worker:resume -- --target <target-id>` | Resume the latest or specified background harness run for a target |
+| `pnpm harness:dashboard` | Open the local dashboard server for monitoring and controlling registered targets |
 
 ## Repository Layout
 
@@ -256,14 +257,20 @@ The template intentionally owns one source schema, one renderer, and one default
 
 ## Harness Worker
 
-For longer Codex CLI runs, the template can supervise one background harness cycle at a time.
+For longer Codex CLI runs, the template can supervise one continuous background harness worker per registered target at a time.
 
-- Configure execution prompts and sandbox behavior in `project.config.json.autonomy`
-- Use `harness.manifest.json` to declare planner, execution, evaluator, and doctor behavior
-- Start with `pnpm harness:worker:start`
-- Check state with `pnpm harness:worker:status`
-- Stop or resume with `pnpm harness:worker:stop` and `pnpm harness:worker:resume`
-- Read the [harness worker runbook](./docs/runbooks/harness-worker.md) for the worker status file and lifecycle details
+- Configure adapters in `harness.manifest.json`
+- Register external targets in `harness.targets.json`
+- Keep target-specific backlog and prompts under `targets/<target-id>/`
+- Start with `pnpm harness:worker:start -- --target <target-id>`
+- Check state with `pnpm harness:worker:status -- --target <target-id>`
+- Stop or resume with `pnpm harness:worker:stop -- --target <target-id>` and `pnpm harness:worker:resume -- --target <target-id>`
+- Open `pnpm harness:dashboard` for the local monitoring and control surface
+- Read the [harness worker runbook](./docs/runbooks/harness-worker.md) for target-scoped state layout and lifecycle details
+
+In continuous mode, each successful run is marked `verified` in the adapter-owned backlog source, and the worker automatically picks up the next ready item until nothing ready remains. If you pass `--task <task-id>`, the worker stays single-shot for that item.
+
+If you call `harness:worker:resume` after the selected run has already reached handoff, the worker does not replay that finished run. It starts the next ready work item instead.
 
 ## Planner Publication Model
 

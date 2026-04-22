@@ -1,8 +1,9 @@
 import { existsSync } from "node:fs";
-import { readFile } from "node:fs/promises";
+import { readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 
 import { runCodex } from "./codex";
+import { NoReadyWorkError } from "./errors";
 import { nowIso } from "./time";
 import { runShellCommand } from "./process";
 import { defaultVerificationConfig, defaultAutonomyConfig, readProjectConfig, type ProjectConfig } from "../../scripts/project-config";
@@ -11,7 +12,9 @@ import type {
   EvaluationEvidence,
   EvaluationResult,
   ExecutionResult,
+  HarnessCompletionUpdate,
   HarnessContext,
+  HarnessReadyWorkItem,
   HarnessTarget,
   ProjectAdapterManifest,
   SprintContract,
@@ -57,6 +60,10 @@ type TaskBoard = {
 
 async function loadJson<T>(filePath: string) {
   return JSON.parse(await readFile(filePath, "utf8")) as T;
+}
+
+async function writeJson(filePath: string, payload: unknown) {
+  await writeFile(filePath, `${JSON.stringify(payload, null, 2)}\n`, "utf8");
 }
 
 function contractPrompt(config: ProjectConfig, contract: SprintContract, resume: boolean) {
@@ -115,7 +122,7 @@ function createContract(task: TaskCard, blueprint: TaskBlueprint, milestone: Mil
       "Stop after a coherent, externally verifiable slice of progress.",
     ],
     inputs: blueprint.input_artifacts ?? [],
-    allowedWriteScope: manifest.execution.defaultWriteScope,
+    allowedWriteScope: manifest.execution.kind === "codex-cli" ? manifest.execution.defaultWriteScope : [],
     acceptanceChecks: blueprint.verification ?? [],
     expectedArtifacts: blueprint.expected_output ?? [],
     nextConsumer: blueprint.next_consumer ?? null,
@@ -131,16 +138,29 @@ function createContract(task: TaskCard, blueprint: TaskBlueprint, milestone: Mil
   };
 }
 
+function sanitizeLabel(value: string) {
+  return value.toLowerCase().replace(/[^a-z0-9._-]+/g, "-");
+}
+
+async function artifactRootWrite(root: string, relativePath: string, content: string) {
+  const fs = await import("node:fs/promises");
+  const target = path.join(root, relativePath);
+  await fs.mkdir(path.dirname(target), { recursive: true });
+  await fs.writeFile(target, content, "utf8");
+  return target;
+}
+
 async function runVerificationCommands(
-  repoRoot: string,
+  targetRepoRoot: string,
   commands: { label: string; command: string }[],
   artifactRoot: string,
 ): Promise<EvaluationEvidence[]> {
   const results: EvaluationEvidence[] = [];
   for (const [index, item] of commands.entries()) {
-    const result = await runShellCommand(item.command, repoRoot);
-    const stdoutLog = await artifactRootWrite(artifactRoot, `eval/${index + 1}-${item.label}.stdout.log`, result.stdout);
-    const stderrLog = await artifactRootWrite(artifactRoot, `eval/${index + 1}-${item.label}.stderr.log`, result.stderr);
+    const result = await runShellCommand(item.command, targetRepoRoot);
+    const label = sanitizeLabel(item.label);
+    const stdoutLog = await artifactRootWrite(artifactRoot, `eval/${index + 1}-${label}.stdout.log`, result.stdout);
+    const stderrLog = await artifactRootWrite(artifactRoot, `eval/${index + 1}-${label}.stderr.log`, result.stderr);
     results.push({
       label: item.label,
       command: item.command,
@@ -157,47 +177,103 @@ async function runVerificationCommands(
   return results;
 }
 
-async function artifactRootWrite(root: string, relativePath: string, content: string) {
-  const fs = await import("node:fs/promises");
-  const target = path.join(root, relativePath);
-  await fs.mkdir(path.dirname(target), { recursive: true });
-  await fs.writeFile(target, content, "utf8");
-  return target;
+function selectReadyTask(board: TaskBoard, selectedTaskId: string | null) {
+  const readyTasks = board.tasks.filter((task) => task.status === "ready");
+  if (selectedTaskId) {
+    const selected = readyTasks.find((item) => item.id === selectedTaskId);
+    if (!selected) {
+      throw new Error(`Task "${selectedTaskId}" is not ready on the current board.`);
+    }
+    return selected;
+  }
+  return readyTasks[0] ?? null;
+}
+
+async function loadBoardAndMilestones(context: HarnessContext, manifest: ProjectAdapterManifest) {
+  if (manifest.planner.kind !== "task-board") {
+    throw new Error(`Foundry adapter requires task-board planner config, received "${manifest.planner.kind}".`);
+  }
+
+  if (manifest.planner.refreshCommand) {
+    const refreshResult = await runShellCommand(manifest.planner.refreshCommand, context.targetRepoRoot);
+    if (refreshResult.exitCode !== 0) {
+      throw new Error(`Planner refresh failed: ${refreshResult.stderr || refreshResult.stdout}`.trim());
+    }
+  }
+
+  const boardPath = path.join(context.targetRepoRoot, manifest.planner.taskBoardPath);
+  const milestonesPath = path.join(context.targetRepoRoot, manifest.planner.milestonesPath);
+  const [board, milestones] = await Promise.all([
+    loadJson<TaskBoard>(boardPath),
+    loadJson<Milestone[]>(milestonesPath),
+  ]);
+
+  return { boardPath, board, milestones };
+}
+
+async function markTaskStatus(
+  boardPath: string,
+  board: TaskBoard,
+  contract: SprintContract,
+  nextStatus: TaskStatus,
+): Promise<HarnessCompletionUpdate | null> {
+  const index = board.tasks.findIndex((task) => task.id === contract.caseId);
+  if (index < 0) {
+    throw new Error(`Task "${contract.caseId}" was not found in ${boardPath}.`);
+  }
+
+  const current = board.tasks[index];
+  if (current.status === nextStatus) {
+    return {
+      itemId: current.id,
+      title: current.title,
+      fromStatus: current.status,
+      toStatus: nextStatus,
+      sourcePath: boardPath,
+      summary: `Task ${current.id} already marked ${nextStatus}.`,
+    };
+  }
+
+  board.tasks[index] = {
+    ...current,
+    status: nextStatus,
+  };
+  await writeJson(boardPath, board);
+  return {
+    itemId: current.id,
+    title: current.title,
+    fromStatus: current.status,
+    toStatus: nextStatus,
+    sourcePath: boardPath,
+    summary: `Updated ${current.id} from ${current.status} to ${nextStatus}.`,
+  };
 }
 
 export function createFoundryAdapter(manifest: ProjectAdapterManifest): HarnessTarget {
   return {
     manifest,
-    async plan(context: HarnessContext) {
-      if (manifest.planner.refreshCommand) {
-        const refreshResult = await runShellCommand(manifest.planner.refreshCommand, context.repoRoot);
-        if (refreshResult.exitCode !== 0) {
-          throw new Error(`Planner refresh failed: ${refreshResult.stderr || refreshResult.stdout}`.trim());
-        }
+    async peekReadyWork(context: HarnessContext) {
+      const { board } = await loadBoardAndMilestones(context, manifest);
+      const task = selectReadyTask(board, context.selectedTaskId);
+      if (!task) {
+        return null;
       }
-
-      const boardPath = path.join(context.repoRoot, manifest.planner.taskBoardPath);
-      const milestonesPath = path.join(context.repoRoot, manifest.planner.milestonesPath);
-      const [board, milestones] = await Promise.all([
-        loadJson<TaskBoard>(boardPath),
-        loadJson<Milestone[]>(milestonesPath),
-      ]);
-      const readyTasks = board.tasks.filter((task) => task.status === "ready");
-      const task = context.selectedTaskId
-        ? readyTasks.find((item) => item.id === context.selectedTaskId)
-        : readyTasks[0];
+      return {
+        id: task.id,
+        title: task.title,
+      } satisfies HarnessReadyWorkItem;
+    },
+    async plan(context: HarnessContext) {
+      const { boardPath, board, milestones } = await loadBoardAndMilestones(context, manifest);
+      const task = selectReadyTask(board, context.selectedTaskId);
 
       if (!task) {
-        throw new Error(
-          context.selectedTaskId
-            ? `Task "${context.selectedTaskId}" is not ready on the current board.`
-            : "No ready task is available for the foundry adapter.",
-        );
+        throw new NoReadyWorkError("No ready task is available for the foundry adapter.");
       }
 
       const milestone = milestones.find((item) => item.id === task.milestone);
       if (!milestone) {
-        throw new Error(`Milestone "${task.milestone}" was not found in ${manifest.planner.milestonesPath}.`);
+        throw new Error(`Milestone "${task.milestone}" was not found for task board ${boardPath}.`);
       }
 
       const blueprint = milestone.taskBlueprints.find((item) => item.id === task.id);
@@ -208,6 +284,10 @@ export function createFoundryAdapter(manifest: ProjectAdapterManifest): HarnessT
       return createContract(task, blueprint, milestone, manifest);
     },
     async execute(context: HarnessContext & { contract: SprintContract; threadId: string | null; resume: boolean }) {
+      if (manifest.execution.kind !== "codex-cli") {
+        throw new Error(`Foundry adapter requires codex-cli execution config, received "${manifest.execution.kind}".`);
+      }
+
       const config = await readProjectConfig();
       const autonomy = config.autonomy ?? defaultAutonomyConfig();
       const prompt = contractPrompt(config, context.contract, context.resume);
@@ -218,7 +298,7 @@ export function createFoundryAdapter(manifest: ProjectAdapterManifest): HarnessT
       const startedAt = nowIso();
 
       const result = await runCodex({
-        repoRoot: context.repoRoot,
+        repoRoot: context.targetRepoRoot,
         prompt,
         promptFile,
         stdoutLog,
@@ -227,11 +307,17 @@ export function createFoundryAdapter(manifest: ProjectAdapterManifest): HarnessT
         sandboxMode: autonomy.sandboxMode,
         model: context.runSpec.model ?? autonomy.model,
         threadId: context.threadId,
+        onThreadStarted: context.executionObserver?.onThreadStarted,
+        onEvent: context.executionObserver?.onCodexEvent,
       });
 
       const execution: ExecutionResult = {
         exitCode: result.exitCode,
-        passed: result.exitCode === 0,
+        passed: result.exitCode === 0 && !result.failureReason,
+        failureReason: result.failureReason,
+        sandboxModeRequested: result.sandboxModeRequested,
+        sandboxModeUsed: result.sandboxModeUsed,
+        fallbackApplied: result.fallbackApplied,
         resume: context.resume,
         threadId: result.threadId,
         startedAt,
@@ -247,11 +333,15 @@ export function createFoundryAdapter(manifest: ProjectAdapterManifest): HarnessT
       return execution;
     },
     async evaluate(context: HarnessContext & { contract: SprintContract; execution: ExecutionResult }) {
+      if (manifest.evaluation.kind !== "verification-stages") {
+        throw new Error(`Foundry adapter requires verification-stages config, received "${manifest.evaluation.kind}".`);
+      }
+
       const config = await readProjectConfig();
       const stages = (config.verification ?? defaultVerificationConfig()).stages.filter((stage) => stage.enabled);
       const commands = stages.map((stage) => ({ label: stage.id, command: stage.command }));
       const startedAt = nowIso();
-      const evidence = await runVerificationCommands(context.repoRoot, commands, context.artifactStore.runDir);
+      const evidence = await runVerificationCommands(context.targetRepoRoot, commands, context.artifactStore.runDir);
       const failed = evidence.find((item) => !item.passed) ?? null;
 
       const result: EvaluationResult = {
@@ -267,18 +357,29 @@ export function createFoundryAdapter(manifest: ProjectAdapterManifest): HarnessT
 
       return result;
     },
+    async completeWork(context: HarnessContext & {
+      contract: SprintContract;
+      execution: ExecutionResult;
+      evaluation: EvaluationResult;
+    }) {
+      if (!context.evaluation.passed) {
+        return null;
+      }
+      const { boardPath, board } = await loadBoardAndMilestones(context, manifest);
+      return markTaskStatus(boardPath, board, context.contract, "verified");
+    },
     async doctor(context: HarnessContext) {
       const checks: DoctorCheck[] = [];
       for (const relativePath of manifest.doctor.requiredFiles) {
         checks.push({
           label: `required-file:${relativePath}`,
-          passed: existsSync(path.join(context.repoRoot, relativePath)),
+          passed: existsSync(path.join(context.targetRepoRoot, relativePath)),
           detail: relativePath,
         });
       }
 
       for (const command of manifest.doctor.requiredCommands) {
-        const result = await runShellCommand(command, context.repoRoot);
+        const result = await runShellCommand(command, context.targetRepoRoot);
         checks.push({
           label: `command:${command}`,
           passed: result.exitCode === 0,

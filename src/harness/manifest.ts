@@ -3,8 +3,8 @@ import path from "node:path";
 
 import type { HarnessManifestFile, ProjectAdapterManifest } from "./types";
 
-export async function loadHarnessManifest(repoRoot: string, manifestPath = "harness.manifest.json") {
-  const absolutePath = path.join(repoRoot, manifestPath);
+export async function loadHarnessManifest(controlRepoRoot: string, manifestPath = "harness.manifest.json") {
+  const absolutePath = path.isAbsolute(manifestPath) ? manifestPath : path.join(controlRepoRoot, manifestPath);
   return JSON.parse(await readFile(absolutePath, "utf8")) as HarnessManifestFile;
 }
 

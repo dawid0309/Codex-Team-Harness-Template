@@ -58,6 +58,8 @@ After initialization, the main repo-native control points are:
 - `project.config.json.repoTruth`, `intent`, `feedback`, and `agents` for canonical repo records
 - `project.config.json.autonomy` for Codex CLI prompt, sandbox, and model defaults
 - `harness.manifest.json` for adapter, evaluator, and worker behavior
+- `harness.targets.json` for target registration, target repo paths, and artifact roots
+- `targets/<target-id>/` for external case files, prompts, and evaluator commands
 - `planning/planner-output.json` for planner proposals that the leader can accept into the task board
 - `planning/next-milestone-output.json` for roadmap-extension proposals that the leader can accept into `planning/milestones.json`
 - `docs/issues/harness-observations.json` for tracked issue-export source data
@@ -70,7 +72,8 @@ pnpm planner:propose
 pnpm planner:publish
 pnpm planner:next
 pnpm issues:export
-pnpm harness:worker:status
+pnpm harness:worker:status -- --target foundry
+pnpm harness:dashboard
 ```
 
 ## Suggested First Prompts For Codex

@@ -12,7 +12,7 @@ export class FileArtifactStore implements HarnessArtifactStore {
   readonly runDir: string;
 
   constructor(spec: HarnessRunSpec) {
-    this.rootDir = path.join(spec.repoRoot, spec.artifactRoot);
+    this.rootDir = path.join(spec.controlRepoRoot, spec.artifactRoot);
     this.runDir = path.join(this.rootDir, "runs", spec.runId);
   }
 
@@ -28,6 +28,14 @@ export class FileArtifactStore implements HarnessArtifactStore {
     const target = this.resolve(relativePath);
     await mkdir(path.dirname(target), { recursive: true });
     await writeFile(target, stringify(payload), "utf8");
+    return target;
+  }
+
+  async appendJsonLine(relativePath: string, payload: unknown) {
+    const target = this.resolve(relativePath);
+    await mkdir(path.dirname(target), { recursive: true });
+    const current = await readFile(target, "utf8").catch(() => "");
+    await writeFile(target, `${current}${JSON.stringify(payload)}\n`, "utf8");
     return target;
   }
 

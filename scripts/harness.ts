@@ -1,23 +1,8 @@
-import path from "node:path";
+import { doctorHarness, resumeHarness, runHarness } from "../src/harness/engine";
+import { defaultCliArgs, runManualEvaluation, type HarnessCliArgs } from "../src/harness/worker-controller";
 
-import { doctorHarness, evaluateHarness, resumeHarness, runHarness } from "../src/harness/engine";
-
-type Args = {
-  adapter: string | null;
-  manifest: string;
-  runId: string | null;
-  model: string | null;
-  task: string | null;
-};
-
-function parseArgs(argv: string[]): Args {
-  const parsed: Args = {
-    adapter: null,
-    manifest: "harness.manifest.json",
-    runId: null,
-    model: null,
-    task: null,
-  };
+function parseArgs(argv: string[]): HarnessCliArgs {
+  const parsed = defaultCliArgs();
 
   for (let index = 0; index < argv.length; index += 1) {
     const current = argv[index];
@@ -29,6 +14,16 @@ function parseArgs(argv: string[]): Args {
     }
     if (current === "--manifest" && next) {
       parsed.manifest = next;
+      index += 1;
+      continue;
+    }
+    if (current === "--targets-file" && next) {
+      parsed.targetsFile = next;
+      index += 1;
+      continue;
+    }
+    if (current === "--target" && next) {
+      parsed.target = next;
       index += 1;
       continue;
     }
@@ -60,20 +55,22 @@ function printChecks(checks: { label: string; passed: boolean; detail: string }[
 async function main() {
   const command = process.argv[2] ?? "doctor";
   const args = parseArgs(process.argv.slice(3));
-  const repoRoot = process.cwd();
-  const manifestPath = path.join(repoRoot, args.manifest);
+  const controlRepoRoot = process.cwd();
 
   switch (command) {
     case "run": {
       const result = await runHarness({
-        repoRoot,
+        controlRepoRoot,
         manifestPath: args.manifest,
+        targetRegistryPath: args.targetsFile,
+        targetId: args.target,
         adapterId: args.adapter,
         runId: args.runId,
         model: args.model,
         taskId: args.task,
       });
       console.log(`Harness run completed: ${result.spec.runId}`);
+      console.log(`Target: ${result.spec.targetId}`);
       console.log(`Adapter: ${result.spec.adapterId}`);
       console.log(`Task: ${result.contract.caseId}`);
       console.log(`Evaluation passed: ${result.evaluation.passed}`);
@@ -82,44 +79,43 @@ async function main() {
     }
     case "resume": {
       if (!args.runId) {
-        throw new Error("Usage: pnpm harness:resume -- --run-id <run-id>");
+        throw new Error("Usage: pnpm harness:resume -- --target <target-id> --run-id <run-id>");
       }
       const result = await resumeHarness({
-        repoRoot,
+        controlRepoRoot,
         manifestPath: args.manifest,
+        targetRegistryPath: args.targetsFile,
+        targetId: args.target,
         adapterId: args.adapter,
         runId: args.runId,
         model: args.model,
       });
       console.log(`Harness run resumed: ${result.spec.runId}`);
+      console.log(`Target: ${result.spec.targetId}`);
       console.log(`Task: ${result.contract.caseId}`);
       console.log(`Evaluation passed: ${result.evaluation.passed}`);
       console.log(`State file: ${result.statePath}`);
       return;
     }
     case "eval": {
-      if (!args.runId) {
-        throw new Error("Usage: pnpm harness:eval -- --run-id <run-id>");
-      }
-      const result = await evaluateHarness({
-        repoRoot,
-        manifestPath: args.manifest,
-        adapterId: args.adapter,
-        runId: args.runId,
-      });
+      const result = await runManualEvaluation(controlRepoRoot, args);
       console.log(`Manual evaluation completed for ${result.contract.caseId}.`);
+      console.log(`Target: ${result.spec.targetId}`);
       console.log(`Evaluation passed: ${result.evaluation.passed}`);
       console.log(`State file: ${result.statePath}`);
       return;
     }
     case "doctor": {
       const result = await doctorHarness({
-        repoRoot,
+        controlRepoRoot,
         manifestPath: args.manifest,
+        targetRegistryPath: args.targetsFile,
+        targetId: args.target,
         adapterId: args.adapter,
       });
       printChecks(result.checks);
       const failed = result.checks.filter((item) => !item.passed);
+      console.log(`Doctor target: ${result.spec.targetId}`);
       console.log(`Doctor checks: ${result.checks.length}, failed: ${failed.length}`);
       if (failed.length > 0) {
         process.exitCode = 1;

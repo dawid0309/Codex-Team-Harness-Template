@@ -1,0 +1,22 @@
+{
+  "version": 1,
+  "defaultTarget": "foundry",
+  "targets": {
+    "foundry": {
+      "id": "foundry",
+      "label": "Codex Harness Foundry",
+      "repoRoot": ".",
+      "adapterId": "foundry",
+      "adapterConfigPath": "targets/foundry/target.config.json",
+      "artifactRoot": "data/harness/targets/foundry"
+    },
+    "poword": {
+      "id": "poword",
+      "label": "Poword",
+      "repoRoot": "../poword",
+      "adapterId": "external-generic",
+      "adapterConfigPath": "targets/poword/target.config.json",
+      "artifactRoot": "data/harness/targets/poword"
+    }
+  }
+}

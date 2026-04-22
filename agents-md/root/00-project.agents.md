@@ -20,4 +20,4 @@ Key commands:
 - `pnpm verify`
 - `pnpm planner:next`
 - `pnpm issues:export`
-- `pnpm harness:worker:status`
+- `pnpm harness:worker:status -- --target foundry`

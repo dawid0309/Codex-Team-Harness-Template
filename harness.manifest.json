@@ -47,6 +47,24 @@
           "codex --version"
         ]
       }
+    },
+    "external-generic": {
+      "id": "external-generic",
+      "label": "External Generic Adapter",
+      "description": "External target adapter that plans from Foundry-side case files, executes Codex in the target repo, and evaluates with Foundry-side command definitions.",
+      "planner": {
+        "kind": "external-cases"
+      },
+      "execution": {
+        "kind": "external-codex-cli"
+      },
+      "evaluation": {
+        "kind": "external-commands"
+      },
+      "doctor": {
+        "requiredFiles": [],
+        "requiredCommands": []
+      }
     }
   }
 }

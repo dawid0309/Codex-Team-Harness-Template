@@ -5,11 +5,15 @@ import path from "node:path";
 import { nowIso } from "./time";
 import type { HarnessCheckpoint, HarnessLiveState, HarnessRunSpec, HarnessWorkerStatus } from "./types";
 
-function defaultLiveState(): HarnessLiveState {
+function defaultLiveState(spec: HarnessRunSpec): HarnessLiveState {
   return {
     status: "idle",
+    phase: null,
     runId: null,
-    adapterId: null,
+    targetId: spec.targetId,
+    adapterId: spec.adapterId,
+    caseId: null,
+    title: null,
     threadId: null,
     startedAt: null,
     updatedAt: nowIso(),
@@ -21,9 +25,11 @@ function defaultLiveState(): HarnessLiveState {
 
 export class JsonStateBackend {
   private readonly statePath: string;
+  private readonly spec: HarnessRunSpec;
 
   constructor(spec: HarnessRunSpec) {
-    this.statePath = path.join(spec.repoRoot, spec.artifactRoot, "live-state.json");
+    this.spec = spec;
+    this.statePath = path.join(spec.controlRepoRoot, spec.artifactRoot, "live-state.json");
   }
 
   async ensure() {
@@ -33,7 +39,7 @@ export class JsonStateBackend {
   async read() {
     await this.ensure();
     if (!existsSync(this.statePath)) {
-      return defaultLiveState();
+      return defaultLiveState(this.spec);
     }
 
     return JSON.parse(await readFile(this.statePath, "utf8")) as HarnessLiveState;
@@ -65,7 +71,15 @@ function defaultWorkerStatus(spec: HarnessRunSpec): HarnessWorkerStatus {
     state: "idle",
     workerPid: null,
     runId: null,
+    targetId: spec.targetId,
     adapterId: spec.adapterId,
+    phase: null,
+    activeLane: null,
+    activeTaskId: null,
+    activeTaskTitle: null,
+    activeSubagentCount: 0,
+    caseId: null,
+    title: null,
     threadId: null,
     startedAt: null,
     updatedAt: nowIso(),
@@ -82,7 +96,7 @@ export class JsonWorkerStatusBackend {
 
   constructor(spec: HarnessRunSpec) {
     this.spec = spec;
-    this.statusPath = path.join(spec.repoRoot, spec.artifactRoot, "worker-status.json");
+    this.statusPath = path.join(spec.controlRepoRoot, spec.artifactRoot, "worker-status.json");
   }
 
   async ensure() {

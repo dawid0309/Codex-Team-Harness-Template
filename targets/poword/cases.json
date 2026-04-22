@@ -1,0 +1,1739 @@
+[
+  {
+    "id": "POW-001",
+    "title": "Harden AI provider boundaries and diagnostics",
+    "status": "verified",
+    "goal": "Poword should expose explicit provider and model configuration, use environment-driven secrets where possible, and leave enough diagnostics for operators to understand which AI path executed.",
+    "instructions": [
+      "Review the current Poword AI integration and keep changes grounded in repository truth.",
+      "Prefer small, reviewable product changes over broad architectural rewrites.",
+      "Do not introduce harness runtime files, status files, or dashboard artifacts into Poword."
+    ],
+    "inputs": [
+      "src/main/java/com/poword/helper/",
+      "src/main/resources/config/"
+    ],
+    "allowedWriteScope": [
+      "src",
+      "docs",
+      "pom.xml",
+      "README.md"
+    ],
+    "acceptanceChecks": [
+      "Poword can determine provider and model without hardcoded values buried in AI call sites.",
+      "Operators can inspect basic diagnostics for AI requests without reading harness internals.",
+      "No harness runtime files or status directories are added to Poword."
+    ],
+    "expectedArtifacts": [
+      "Updated Poword product code",
+      "Reviewable config or docs changes if needed"
+    ],
+    "nextConsumer": "poword-maintainer",
+    "metadata": {
+      "productArea": "ai-integration"
+    }
+  },
+  {
+    "id": "POW-002",
+    "title": "Extract deterministic review word selection from stored study activity",
+    "status": "verified",
+    "goal": "Poword should choose review words from its existing dictionary and study-history data instead of relying on a hardcoded word list.",
+    "instructions": [
+      "Add a small selection service that derives a review list from persisted study signals such as highlighted words, favorites, query history, and review results.",
+      "Keep the selection deterministic for the same database state by using explicit ranking and stable tie-break rules.",
+      "Update the article-generation flow so it can consume the selector output instead of embedding a sample vocabulary list in product code.",
+      "Cover the ranking and empty-state behavior with focused tests."
+    ],
+    "inputs": [
+      "src/main/java/com/poword/service/agentservice/NewsCommander.java",
+      "src/main/java/com/poword/service/wordservice/WordQueryService.java",
+      "src/main/java/com/poword/dao/DictDao.java",
+      "src/main/java/com/poword/dao/QueryLogDao.java",
+      "src/main/java/com/poword/dao/ReviewLogDao.java",
+      "src/main/java/com/poword/dao/UserWordInfoDao.java",
+      "src/main/resources/sql/"
+    ],
+    "allowedWriteScope": [
+      "src/main/java/com/poword/service/",
+      "src/main/java/com/poword/dao/",
+      "src/test/java/com/poword/"
+    ],
+    "acceptanceChecks": [
+      "The product can produce a review-word list from stored study data without editing source code.",
+      "The same underlying data produces the same ordered review-word output.",
+      "The article-generation flow no longer depends on a hardcoded demo vocabulary list.",
+      "Focused tests cover ranking or tie-break behavior and the no-candidate case."
+    ],
+    "expectedArtifacts": [
+      "A review-word selection service",
+      "DAO support needed to read selection inputs",
+      "Focused tests for selector behavior"
+    ],
+    "nextConsumer": "poword-maintainer",
+    "metadata": {
+      "focusArea": "study-selection",
+      "generatedByPlanner": true,
+      "plannerRunId": "poword-planner-probe-20260421204051",
+      "generatedAt": "2026-04-21T12:43:33.381Z",
+      "generationMode": "auto-replenishment"
+    }
+  },
+  {
+    "id": "POW-003",
+    "title": "Add a manual article-generation entry point with topic and review-count inputs",
+    "status": "backlog",
+    "goal": "Poword should expose one supported way to run article generation from the command line using configured RSS topics and the selected review words.",
+    "instructions": [
+      "Introduce a small application entry point that accepts a topic or RSS source choice and a requested review-word count.",
+      "Route the new entry point through the existing article-generation flow and the new review-word selector instead of requiring code edits in `main` methods.",
+      "Use the existing topic configuration keys where possible and print a concise run summary or a clear usage message for invalid inputs.",
+      "Document the supported invocation in repository-facing docs."
+    ],
+    "inputs": [
+      "src/main/java/com/poword/App.java",
+      "src/main/java/com/poword/service/agentservice/NewsCommander.java",
+      "src/main/java/com/poword/helper/ConfigHelper.java",
+      "src/main/resources/config/config.properties",
+      "README.md"
+    ],
+    "allowedWriteScope": [
+      "src/main/java/com/poword/",
+      "src/main/java/com/poword/service/agentservice/",
+      "src/main/java/com/poword/helper/",
+      "src/test/java/com/poword/",
+      "src/main/resources/config/",
+      "README.md"
+    ],
+    "acceptanceChecks": [
+      "A maintainer can start one article-generation run without changing source code.",
+      "The entry point accepts a configured topic choice and review-word count.",
+      "Invalid arguments return a clear usage or validation message instead of falling back to hidden defaults.",
+      "README or equivalent product docs show the supported invocation."
+    ],
+    "expectedArtifacts": [
+      "A command-line generation entry point",
+      "Argument parsing or validation coverage",
+      "Updated usage documentation"
+    ],
+    "nextConsumer": "poword-maintainer",
+    "metadata": {
+      "focusArea": "article-generation",
+      "generatedByPlanner": true,
+      "plannerRunId": "poword-planner-probe-20260421204051",
+      "generatedAt": "2026-04-21T12:43:33.381Z",
+      "generationMode": "auto-replenishment"
+    }
+  },
+  {
+    "id": "POW-004",
+    "title": "Add a configurable daily generation launcher with duplicate-run protection",
+    "status": "backlog",
+    "goal": "Poword should be able to run one scheduled daily generation pass from configuration without producing repeated batches for the same day.",
+    "instructions": [
+      "Add a small scheduler or scheduled-launch path that reads its topic, run time, and review-word count from configuration.",
+      "Prevent duplicate work by checking whether the day already has generated article output before starting a new run.",
+      "Fail fast with a clear operator message when required configuration or runtime prerequisites are missing.",
+      "Document the schedule settings and the duplicate-run behavior."
+    ],
+    "inputs": [
+      "src/main/java/com/poword/App.java",
+      "src/main/java/com/poword/service/agentservice/NewsCommander.java",
+      "src/main/java/com/poword/dao/ArticleDao.java",
+      "src/main/java/com/poword/helper/ConfigHelper.java",
+      "src/main/resources/config/config.properties",
+      "README.md"
+    ],
+    "allowedWriteScope": [
+      "src/main/java/com/poword/",
+      "src/main/java/com/poword/service/agentservice/",
+      "src/main/java/com/poword/dao/",
+      "src/main/java/com/poword/helper/",
+      "src/test/java/com/poword/",
+      "src/main/resources/config/",
+      "README.md",
+      "docs/"
+    ],
+    "acceptanceChecks": [
+      "The product exposes a configuration-driven daily generation mode.",
+      "A second launch on the same day does not generate a duplicate batch when the day's output already exists.",
+      "Missing schedule or runtime prerequisites produce a clear operator-visible failure message.",
+      "Documentation explains how the daily launcher decides whether to run or skip."
+    ],
+    "expectedArtifacts": [
+      "A daily generation launcher",
+      "Duplicate-run guard logic",
+      "Configuration and usage documentation"
+    ],
+    "nextConsumer": "poword-maintainer",
+    "metadata": {
+      "focusArea": "scheduling",
+      "generatedByPlanner": true,
+      "plannerRunId": "poword-planner-probe-20260421204051",
+      "generatedAt": "2026-04-21T12:43:33.381Z",
+      "generationMode": "auto-replenishment"
+    }
+  },
+  {
+    "id": "POW-005",
+    "title": "Separate RSS source storage from finalized study article persistence",
+    "status": "verified",
+    "goal": "Poword should preserve fetched source stories and finalized generated study articles as distinct records so one news item can move through the pipeline without title collisions or ambiguous reads.",
+    "instructions": [
+      "Introduce an explicit persistence shape for source articles versus finalized generated articles, either through article fields or dedicated DAO methods, so the pipeline no longer overloads one row shape for both stages.",
+      "Update RSS ingestion to save source content through the source-side path and update article generation to save finalized Chinese and English output through the finalized side while preserving inserted-word data.",
+      "Make duplicate handling explicit for repeated RSS fetches of the same source article and repeated generation attempts for the same source article.",
+      "If the article table contract is not represented in the repo today, add the missing schema or a migration note alongside the existing SQL resources.",
+      "Cover the DAO and service lifecycle with focused tests for initial ingest, finalized save, and duplicate-source behavior."
+    ],
+    "inputs": [
+      "src/main/java/com/poword/dao/ArticleDao.java",
+      "src/main/java/com/poword/model/ArticleModel.java",
+      "src/main/java/com/poword/helper/RSSHelper.java",
+      "src/main/java/com/poword/service/agentservice/NewsCommander.java",
+      "src/main/resources/sql/"
+    ],
+    "allowedWriteScope": [
+      "src/main/java/com/poword/dao/",
+      "src/main/java/com/poword/model/",
+      "src/main/java/com/poword/helper/",
+      "src/main/java/com/poword/service/agentservice/",
+      "src/test/java/com/poword/",
+      "src/main/resources/sql/",
+      "README.md",
+      "docs/"
+    ],
+    "acceptanceChecks": [
+      "A fetched source article and its finalized generated study article can both exist for the same news item without ambiguous query results.",
+      "The generation flow reads source content deterministically and saves finalized output without relying on silent unique-constraint failures.",
+      "Repeated ingestion of the same source article does not create duplicate source records.",
+      "The repository includes enough schema or migration detail for maintainers to understand the article storage contract.",
+      "Focused tests cover source ingest, finalized save, and duplicate-source scenarios."
+    ],
+    "expectedArtifacts": [
+      "Updated article persistence code",
+      "Article schema or migration documentation",
+      "Focused tests for the article lifecycle"
+    ],
+    "nextConsumer": "poword-maintainer",
+    "metadata": {
+      "focusArea": "article-persistence",
+      "generatedByPlanner": true,
+      "plannerRunId": "run-20260421130123-6wz4sj",
+      "generatedAt": "2026-04-21T13:04:53.101Z",
+      "generationMode": "auto-replenishment"
+    }
+  },
+  {
+    "id": "POW-006",
+    "title": "Restore the generation quality gate and save actual inserted-word results",
+    "status": "backlog",
+    "goal": "Poword should only keep finalized study articles after the language and word-insertion checks run through the intended prompts and retry paths, and the saved metadata should reflect what was actually inserted.",
+    "instructions": [
+      "Wire the language and word evaluators to the correct prompt contracts and response fields instead of reusing translation prompts.",
+      "Fix the retry flow so language failures route back to translation, word-insertion failures route back to insertion, and successful articles continue forward without duplicate work.",
+      "Save the words that were actually inserted into the finalized article record rather than only the originally requested review list.",
+      "Keep failure advice visible enough for maintainers to understand why a candidate article was retried or rejected.",
+      "Add focused tests with stubbed worker and evaluator outputs for pass, retranslate, and reinsert cases."
+    ],
+    "inputs": [
+      "src/main/java/com/poword/service/agentservice/evaluator/LanguageEvaluator.java",
+      "src/main/java/com/poword/service/agentservice/evaluator/WordEvaluator.java",
+      "src/main/java/com/poword/service/agentservice/worker/Translator.java",
+      "src/main/java/com/poword/service/agentservice/worker/WordInsertor.java",
+      "src/main/java/com/poword/service/agentservice/NewsCommander.java",
+      "src/main/java/com/poword/model/request/NewsDTO.java",
+      "src/main/resources/config/ai_prompts.json"
+    ],
+    "allowedWriteScope": [
+      "src/main/java/com/poword/service/agentservice/",
+      "src/main/java/com/poword/model/",
+      "src/main/java/com/poword/dao/",
+      "src/main/resources/config/",
+      "src/test/java/com/poword/"
+    ],
+    "acceptanceChecks": [
+      "Language and word-insertion evaluation use prompt keys that match the expected response fields for those steps.",
+      "A failed language check reruns the translation step, and a failed word-insertion check reruns the insertion step.",
+      "Successful articles complete the chain once and do not trigger extra retries.",
+      "Finalized article persistence records the words actually inserted into the saved article.",
+      "Focused tests cover pass, retranslate, and reinsert control-flow branches."
+    ],
+    "expectedArtifacts": [
+      "Corrected evaluator and retry-flow code",
+      "Updated prompt contracts where needed",
+      "Focused pipeline tests"
+    ],
+    "nextConsumer": "poword-maintainer",
+    "metadata": {
+      "focusArea": "generation-quality",
+      "generatedByPlanner": true,
+      "plannerRunId": "run-20260421130123-6wz4sj",
+      "generatedAt": "2026-04-21T13:04:53.101Z",
+      "generationMode": "auto-replenishment"
+    }
+  },
+  {
+    "id": "POW-007",
+    "title": "Add a generation preflight that blocks unusable runs before AI work starts",
+    "status": "backlog",
+    "goal": "Poword should validate the required runtime inputs for article generation up front so a maintainer gets one clear failure report instead of partial work and late exceptions.",
+    "instructions": [
+      "Add a small preflight service for article generation that checks database connectivity, required AI configuration, prompt availability, RSS source reachability, and review-word availability before the pipeline starts.",
+      "Return a concise structured result with pass or fail status and human-readable failure reasons instead of letting downstream helpers fail independently.",
+      "Run the preflight at the start of the generation flow and stop before any article write when the environment is not ready.",
+      "Treat an empty review-word selection as a first-class preflight outcome with a clear message rather than silently continuing.",
+      "Cover the preflight outcomes with focused tests and document the supported checks."
+    ],
+    "inputs": [
+      "src/main/java/com/poword/service/agentservice/NewsCommander.java",
+      "src/main/java/com/poword/helper/ConfigHelper.java",
+      "src/main/java/com/poword/helper/DatabaseConnectHelper.java",
+      "src/main/java/com/poword/helper/RSSHelper.java",
+      "src/main/java/com/poword/service/reviewservice/ReviewWordSelectionService.java",
+      "src/main/resources/config/ai_prompts.json",
+      "README.md"
+    ],
+    "allowedWriteScope": [
+      "src/main/java/com/poword/service/agentservice/",
+      "src/main/java/com/poword/helper/",
+      "src/main/java/com/poword/service/reviewservice/",
+      "src/test/java/com/poword/",
+      "src/main/resources/config/",
+      "README.md",
+      "docs/"
+    ],
+    "acceptanceChecks": [
+      "The generation flow performs one preflight before AI-backed work begins.",
+      "Missing API configuration, unreachable RSS input, unavailable prompts, database access problems, and empty review-word selection each produce a clear operator-visible failure reason.",
+      "When preflight fails, Poword does not begin article generation or write partial article output.",
+      "Focused tests cover successful preflight and representative failure modes.",
+      "Documentation explains what the preflight checks and how to fix each failure class."
+    ],
+    "expectedArtifacts": [
+      "A generation preflight service",
+      "Preflight test coverage",
+      "Updated operator documentation"
+    ],
+    "nextConsumer": "poword-maintainer",
+    "metadata": {
+      "focusArea": "generation-readiness",
+      "generatedByPlanner": true,
+      "plannerRunId": "run-20260421130123-6wz4sj",
+      "generatedAt": "2026-04-21T13:04:53.101Z",
+      "generationMode": "auto-replenishment"
+    }
+  },
+  {
+    "id": "POW-008",
+    "title": "Keep batch article generation moving and record the latest outcome per source story",
+    "status": "verified",
+    "goal": "Poword should continue processing the rest of a selected news batch when one source story fails, and it should persist the latest success or failure outcome for each source story.",
+    "instructions": [
+      "Wrap per-source generation work so one failing story does not abort the rest of the selected batch.",
+      "Persist one latest outcome record tied to the source article, including outcome state, attempt time, and a concise failure summary or retry advice when available.",
+      "When a later retry succeeds for the same source article, clear or replace the stale failure outcome and keep the finalized article linkage deterministic.",
+      "Add focused tests for mixed success and failure in one batch and for a successful rerun after an earlier failure."
+    ],
+    "inputs": [
+      "src/main/java/com/poword/service/agentservice/NewsCommander.java",
+      "src/main/java/com/poword/dao/ArticleDao.java",
+      "src/main/java/com/poword/model/ArticleModel.java",
+      "src/main/resources/sql/articles.sql",
+      "src/test/java/com/poword/dao/ArticleDaoTest.java"
+    ],
+    "allowedWriteScope": [
+      "src/main/java/com/poword/service/agentservice/",
+      "src/main/java/com/poword/dao/",
+      "src/main/java/com/poword/model/",
+      "src/main/resources/sql/",
+      "src/test/java/com/poword/",
+      "README.md",
+      "docs/"
+    ],
+    "acceptanceChecks": [
+      "If one selected source story fails during generation, later selected stories still run in the same batch.",
+      "The product can read the latest generation outcome for a source story without relying on console output or external log files.",
+      "A successful rerun for a previously failed source story replaces the stale failed outcome and preserves the linked finalized article behavior.",
+      "Focused tests cover mixed batch outcomes and outcome-state replacement on rerun."
+    ],
+    "expectedArtifacts": [
+      "Latest-outcome persistence for source stories",
+      "Batch-resilience changes in article generation",
+      "Focused tests for success and failure transitions"
+    ],
+    "nextConsumer": "poword-maintainer",
+    "metadata": {
+      "focusArea": "generation-outcomes",
+      "generatedByPlanner": true,
+      "plannerRunId": "run-20260421131821-ijug9b",
+      "generatedAt": "2026-04-21T13:22:15.393Z",
+      "generationMode": "auto-replenishment"
+    }
+  },
+  {
+    "id": "POW-009",
+    "title": "Add a recent generation history and article detail lookup path",
+    "status": "backlog",
+    "goal": "Poword should expose one supported way to inspect recent source stories, their latest generation outcome, and any linked finalized study article without opening the database directly.",
+    "instructions": [
+      "Add deterministic history queries that return recent source stories with their latest outcome and finalized-article presence.",
+      "Expose a small command-line read path for recent history and single-story detail lookup by source id or title fragment.",
+      "Show concise no-result and failed-outcome messaging so maintainers can tell whether a story never ran, failed, or completed.",
+      "Cover history ordering and detail lookup behavior with focused tests and document the supported usage."
+    ],
+    "inputs": [
+      "src/main/java/com/poword/App.java",
+      "src/main/java/com/poword/dao/ArticleDao.java",
+      "src/main/java/com/poword/model/ArticleModel.java",
+      "src/main/java/com/poword/service/agentservice/NewsCommander.java",
+      "README.md"
+    ],
+    "allowedWriteScope": [
+      "src/main/java/com/poword/",
+      "src/main/java/com/poword/dao/",
+      "src/main/java/com/poword/model/",
+      "src/main/java/com/poword/service/agentservice/",
+      "src/test/java/com/poword/",
+      "README.md",
+      "docs/"
+    ],
+    "acceptanceChecks": [
+      "A maintainer can list recent generation history without inspecting the SQLite file directly.",
+      "History output distinguishes source stories with successful, failed, and not-yet-successful outcomes.",
+      "Detail lookup can show the source content and any linked finalized study article for one source story.",
+      "Focused tests cover deterministic history ordering and detail lookup behavior."
+    ],
+    "expectedArtifacts": [
+      "History and detail lookup queries",
+      "A command-line read path for article-generation history",
+      "Usage documentation and focused tests"
+    ],
+    "nextConsumer": "poword-maintainer",
+    "metadata": {
+      "focusArea": "generation-history",
+      "generatedByPlanner": true,
+      "plannerRunId": "run-20260421131821-ijug9b",
+      "generatedAt": "2026-04-21T13:22:15.393Z",
+      "generationMode": "auto-replenishment"
+    }
+  },
+  {
+    "id": "POW-010",
+    "title": "Add targeted retry for failed or unfinished source stories",
+    "status": "backlog",
+    "goal": "Poword should let a maintainer retry only failed or unfinished source stories instead of reprocessing stories that already completed successfully.",
+    "instructions": [
+      "Add a retry path that selects eligible source stories from persisted data by source id, title fragment, or latest outcome state.",
+      "Reuse the existing generation flow and review-word selection rules, but skip already successful stories by default unless a force flag is explicitly provided.",
+      "Update the latest outcome and finalized article state when a retry runs, and print a concise retry summary with retried, skipped, and recovered counts.",
+      "Add focused tests for eligibility filtering, skip behavior, and successful recovery after a failed earlier attempt."
+    ],
+    "inputs": [
+      "src/main/java/com/poword/App.java",
+      "src/main/java/com/poword/service/agentservice/NewsCommander.java",
+      "src/main/java/com/poword/dao/ArticleDao.java",
+      "src/main/java/com/poword/service/reviewservice/ReviewWordSelectionService.java",
+      "README.md"
+    ],
+    "allowedWriteScope": [
+      "src/main/java/com/poword/",
+      "src/main/java/com/poword/service/agentservice/",
+      "src/main/java/com/poword/dao/",
+      "src/main/java/com/poword/model/",
+      "src/main/java/com/poword/service/reviewservice/",
+      "src/test/java/com/poword/",
+      "README.md",
+      "docs/"
+    ],
+    "acceptanceChecks": [
+      "A maintainer can retry only failed or unfinished source stories without re-running stories that already completed successfully.",
+      "A successful retry updates the story's latest outcome and keeps or creates the linked finalized article deterministically.",
+      "If no source stories are eligible for retry, the command returns a clear message instead of silently doing nothing.",
+      "Focused tests cover retry eligibility, default skipping of successful stories, and recovery after failure."
+    ],
+    "expectedArtifacts": [
+      "A targeted retry command path",
+      "Eligibility and recovery logic for persisted source stories",
+      "Focused retry tests and usage documentation"
+    ],
+    "nextConsumer": "poword-maintainer",
+    "metadata": {
+      "focusArea": "generation-retry",
+      "generatedByPlanner": true,
+      "plannerRunId": "run-20260421131821-ijug9b",
+      "generatedAt": "2026-04-21T13:22:15.393Z",
+      "generationMode": "auto-replenishment"
+    }
+  },
+  {
+    "id": "POW-011",
+    "title": "Persist finalized article vocabulary links as first-class records",
+    "status": "verified",
+    "goal": "Poword should keep the actual inserted words for each finalized study article as ordered linked records so later reading and study features do not depend on parsing one text field.",
+    "instructions": [
+      "Add persistence for one row per finalized article and inserted word, preserving the insertion order reported by generation.",
+      "Populate the linked-word records when a finalized article is saved and replace stale records deterministically when the same source story is regenerated.",
+      "Keep the existing summary text only if it is still needed for compatibility, but make the linked records the authoritative source for downstream reads.",
+      "Add focused tests for initial save, rerun replacement, and zero-inserted-word cases."
+    ],
+    "inputs": [
+      "src/main/java/com/poword/dao/ArticleDao.java",
+      "src/main/java/com/poword/model/ArticleModel.java",
+      "src/main/java/com/poword/service/agentservice/NewsCommander.java",
+      "src/main/resources/sql/articles.sql",
+      "src/test/java/com/poword/dao/ArticleDaoTest.java"
+    ],
+    "allowedWriteScope": [
+      "src/main/java/com/poword/dao/",
+      "src/main/java/com/poword/model/",
+      "src/main/java/com/poword/service/agentservice/",
+      "src/main/resources/sql/",
+      "src/test/java/com/poword/",
+      "docs/",
+      "README.md"
+    ],
+    "acceptanceChecks": [
+      "Finalized article persistence creates one deterministic ordered linked-word record per inserted word.",
+      "Saving a newer finalized article for the same source story replaces stale linked-word records instead of accumulating duplicates.",
+      "Product code can query the linked vocabulary for a finalized article without splitting a comma-separated string.",
+      "Focused tests cover initial save, rerun replacement, and zero-word behavior."
+    ],
+    "expectedArtifacts": [
+      "Updated article persistence and schema for linked inserted words",
+      "Query support for article-linked vocabulary",
+      "Focused linked-word lifecycle tests"
+    ],
+    "nextConsumer": "poword-maintainer",
+    "metadata": {
+      "focusArea": "article-vocabulary",
+      "generatedByPlanner": true,
+      "plannerRunId": "run-20260421133521-31072k",
+      "generatedAt": "2026-04-21T13:40:51.172Z",
+      "generationMode": "auto-replenishment"
+    }
+  },
+  {
+    "id": "POW-012",
+    "title": "Preserve original RSS provenance on source stories",
+    "status": "backlog",
+    "goal": "Poword should retain the original source link and feed identity for each persisted source story so generated study articles can be traced back to the news item they came from.",
+    "instructions": [
+      "Extend source-story persistence to keep the original RSS link and one stable feed or topic label alongside the existing deduplication key.",
+      "Update RSS ingestion so repeated fetches of the same story refresh provenance fields deterministically without creating duplicate source rows.",
+      "Expose the saved provenance on source-article reads so later product flows can show or export it without recomputing from raw feed input.",
+      "Document the expanded storage contract and add focused tests for save, rerun update, and legacy-schema compatibility."
+    ],
+    "inputs": [
+      "src/main/java/com/poword/helper/RSSHelper.java",
+      "src/main/java/com/poword/dao/ArticleDao.java",
+      "src/main/java/com/poword/model/ArticleModel.java",
+      "src/main/resources/sql/articles.sql",
+      "docs/article-storage-contract.md",
+      "src/test/java/com/poword/dao/ArticleDaoTest.java"
+    ],
+    "allowedWriteScope": [
+      "src/main/java/com/poword/helper/",
+      "src/main/java/com/poword/dao/",
+      "src/main/java/com/poword/model/",
+      "src/main/resources/sql/",
+      "src/test/java/com/poword/",
+      "docs/",
+      "README.md"
+    ],
+    "acceptanceChecks": [
+      "A persisted source story can report its original RSS link and feed or topic label from product storage.",
+      "Reingesting the same source story updates provenance in place without creating a duplicate source row.",
+      "Source-article reads expose provenance directly instead of requiring callers to rebuild it from feed input.",
+      "Focused tests cover provenance persistence, update behavior, and compatibility with existing article rows."
+    ],
+    "expectedArtifacts": [
+      "Expanded source-story schema and model fields",
+      "Updated RSS ingestion and source-read behavior",
+      "Focused provenance persistence tests",
+      "Updated article storage documentation"
+    ],
+    "nextConsumer": "poword-maintainer",
+    "metadata": {
+      "focusArea": "source-provenance",
+      "generatedByPlanner": true,
+      "plannerRunId": "run-20260421133521-31072k",
+      "generatedAt": "2026-04-21T13:40:51.172Z",
+      "generationMode": "auto-replenishment"
+    }
+  },
+  {
+    "id": "POW-013",
+    "title": "Assemble a learner-ready article packet from persisted study data",
+    "status": "backlog",
+    "goal": "Poword should be able to build one structured reading packet for a finalized study article that combines the article text, linked vocabulary, and saved source context in a form that can be consumed outside the database.",
+    "instructions": [
+      "Add a small read service that assembles a finalized article packet from persisted source, finalized, and linked-word records.",
+      "Resolve learner-facing vocabulary entries in article order using existing dictionary definitions and translations where available.",
+      "Keep saved inserted words visible even when a dictionary match is missing by returning a clear unresolved marker instead of silently dropping them.",
+      "Cover packet assembly with focused tests and document the supported packet shape for maintainers."
+    ],
+    "inputs": [
+      "src/main/java/com/poword/dao/ArticleDao.java",
+      "src/main/java/com/poword/dao/DictDao.java",
+      "src/main/java/com/poword/model/ArticleModel.java",
+      "src/main/java/com/poword/service/",
+      "README.md"
+    ],
+    "allowedWriteScope": [
+      "src/main/java/com/poword/dao/",
+      "src/main/java/com/poword/model/",
+      "src/main/java/com/poword/service/",
+      "src/test/java/com/poword/",
+      "docs/",
+      "README.md"
+    ],
+    "acceptanceChecks": [
+      "Given one finalized article or source story, product code can assemble a deterministic packet with article text, saved source context, and ordered vocabulary entries.",
+      "Vocabulary entries use existing dictionary data when available and keep unresolved saved words visible with a clear marker.",
+      "Packet assembly reads only through product queries and services rather than requiring direct database inspection.",
+      "Focused tests cover ordered vocabulary output and missing-dictionary behavior."
+    ],
+    "expectedArtifacts": [
+      "A study-article packet model and read service",
+      "Dictionary-backed vocabulary assembly for finalized articles",
+      "Focused packet assembly tests",
+      "Maintainer-facing packet documentation"
+    ],
+    "nextConsumer": "poword-maintainer",
+    "metadata": {
+      "focusArea": "article-packet",
+      "generatedByPlanner": true,
+      "plannerRunId": "run-20260421133521-31072k",
+      "generatedAt": "2026-04-21T13:40:51.172Z",
+      "generationMode": "auto-replenishment"
+    }
+  },
+  {
+    "id": "POW-014",
+    "title": "Export one persisted study article packet as deterministic JSON",
+    "status": "verified",
+    "goal": "Poword should let a maintainer export one finalized study article packet from persisted data so the article, source context, and vocabulary can be consumed outside the database.",
+    "instructions": [
+      "Add one supported read path that resolves a source story or finalized article from persisted records and writes the assembled packet as JSON to stdout or a requested file.",
+      "Reuse stored source, finalized, and linked-word data plus dictionary lookups instead of refetching RSS content or rerunning AI generation.",
+      "Keep the exported field shape and vocabulary ordering deterministic so repeated exports of the same data produce the same JSON payload.",
+      "Return a clear message when the requested story has no finalized article or cannot be found, and cover export shape and missing-result behavior with focused tests."
+    ],
+    "inputs": [
+      "src/main/java/com/poword/App.java",
+      "src/main/java/com/poword/dao/ArticleDao.java",
+      "src/main/java/com/poword/dao/DictDao.java",
+      "src/main/java/com/poword/service/",
+      "README.md"
+    ],
+    "allowedWriteScope": [
+      "src/main/java/com/poword/",
+      "src/main/java/com/poword/dao/",
+      "src/main/java/com/poword/model/",
+      "src/main/java/com/poword/service/",
+      "src/test/java/com/poword/",
+      "docs/",
+      "README.md"
+    ],
+    "acceptanceChecks": [
+      "A maintainer can export one persisted study packet by a supported identifier without opening SQLite directly.",
+      "The JSON export includes article text, ordered vocabulary entries, and saved source context from product storage.",
+      "Repeated exports of unchanged data produce the same field order and vocabulary order.",
+      "Focused tests cover successful export, not-found handling, and a story with no finalized article."
+    ],
+    "expectedArtifacts": [
+      "A packet export command path",
+      "A deterministic packet JSON shape",
+      "Focused export tests",
+      "Maintainer-facing usage documentation"
+    ],
+    "nextConsumer": "poword-maintainer",
+    "metadata": {
+      "focusArea": "packet-export",
+      "generatedByPlanner": true,
+      "plannerRunId": "run-20260421135155-eferv1",
+      "generatedAt": "2026-04-21T13:55:31.795Z",
+      "generationMode": "auto-replenishment"
+    }
+  },
+  {
+    "id": "POW-015",
+    "title": "Render an exported study packet as a Markdown reading sheet",
+    "status": "backlog",
+    "goal": "Poword should be able to turn one persisted study packet into a readable Markdown study sheet that can be reviewed without database access.",
+    "instructions": [
+      "Add a renderer that formats one assembled study packet into Markdown with clear sections for source context, article text, and ordered vocabulary.",
+      "Keep saved inserted words visible even when dictionary data is missing by showing an explicit unresolved marker instead of dropping the entry.",
+      "Route the Markdown output through the same packet read path as the JSON export so the product has one source of truth for packet assembly.",
+      "Cover section ordering, unresolved vocabulary handling, and empty optional fields with focused tests and document the supported output."
+    ],
+    "inputs": [
+      "src/main/java/com/poword/App.java",
+      "src/main/java/com/poword/model/",
+      "src/main/java/com/poword/service/",
+      "README.md"
+    ],
+    "allowedWriteScope": [
+      "src/main/java/com/poword/",
+      "src/main/java/com/poword/model/",
+      "src/main/java/com/poword/service/",
+      "src/test/java/com/poword/",
+      "docs/",
+      "README.md"
+    ],
+    "acceptanceChecks": [
+      "A maintainer can render one persisted study packet as Markdown through a supported product path.",
+      "The Markdown output preserves article and vocabulary ordering from stored data.",
+      "Vocabulary entries with missing dictionary matches remain visible with a clear unresolved marker.",
+      "Focused tests cover stable section ordering and representative missing-data cases."
+    ],
+    "expectedArtifacts": [
+      "A Markdown packet renderer",
+      "Renderer coverage tests",
+      "Updated export usage documentation"
+    ],
+    "nextConsumer": "poword-maintainer",
+    "metadata": {
+      "focusArea": "study-sheet",
+      "generatedByPlanner": true,
+      "plannerRunId": "run-20260421135155-eferv1",
+      "generatedAt": "2026-04-21T13:55:31.795Z",
+      "generationMode": "auto-replenishment"
+    }
+  },
+  {
+    "id": "POW-016",
+    "title": "Batch-export the latest successful study packets for a selected day",
+    "status": "backlog",
+    "goal": "Poword should let a maintainer export a day's successful study packets in one run so recent generated reading material can be reviewed or shared without one-by-one lookups.",
+    "instructions": [
+      "Add a batch export path that selects persisted source stories for a requested day, keeps only stories whose latest outcome is successful and that have linked finalized articles, and exports them in deterministic order.",
+      "Reuse the single-packet export and rendering flow instead of duplicating packet assembly logic.",
+      "Give each exported file a deterministic name derived from stored article data and surface clear skip reasons for failed, unfinished, or missing-finalized stories.",
+      "Cover ordering, skip behavior, and filename-collision handling with focused tests and document the batch export workflow."
+    ],
+    "inputs": [
+      "src/main/java/com/poword/App.java",
+      "src/main/java/com/poword/dao/ArticleDao.java",
+      "src/main/java/com/poword/model/ArticleModel.java",
+      "src/main/java/com/poword/service/",
+      "README.md"
+    ],
+    "allowedWriteScope": [
+      "src/main/java/com/poword/",
+      "src/main/java/com/poword/dao/",
+      "src/main/java/com/poword/model/",
+      "src/main/java/com/poword/service/",
+      "src/test/java/com/poword/",
+      "docs/",
+      "README.md"
+    ],
+    "acceptanceChecks": [
+      "A maintainer can export all successful persisted study packets for one selected day without querying the database directly.",
+      "Batch export skips failed, unfinished, or missing-finalized stories and reports why each skipped story was excluded.",
+      "Export order and generated filenames are deterministic for the same stored data.",
+      "Focused tests cover batch selection, skip reporting, and deterministic filename behavior."
+    ],
+    "expectedArtifacts": [
+      "A batch packet export command path",
+      "Deterministic file naming and skip reporting",
+      "Focused batch export tests",
+      "Maintainer-facing batch export documentation"
+    ],
+    "nextConsumer": "poword-maintainer",
+    "metadata": {
+      "focusArea": "packet-batch-export",
+      "generatedByPlanner": true,
+      "plannerRunId": "run-20260421135155-eferv1",
+      "generatedAt": "2026-04-21T13:55:31.795Z",
+      "generationMode": "auto-replenishment"
+    }
+  },
+  {
+    "id": "POW-017",
+    "title": "Export one persisted study packet vocabulary as a tabular flashcard deck",
+    "status": "verified",
+    "goal": "Poword should let a maintainer export the ordered vocabulary from one persisted study packet as a deterministic TSV deck that can be reviewed or imported into other study tools without opening SQLite.",
+    "instructions": [
+      "Add a small command-line read path that accepts the same single-packet identifiers already supported for packet export and emits one TSV deck to stdout.",
+      "Build deck rows from the persisted packet vocabulary in article order instead of re-querying ad hoc word lists, and include a stable header row with learner-facing fields such as word, translation, definition, source title, and article title.",
+      "Keep saved inserted words visible even when dictionary data is missing by emitting the row with an explicit unresolved marker instead of dropping it.",
+      "Cover argument parsing, row ordering, and unresolved-vocabulary behavior with focused tests and document the supported TSV contract."
+    ],
+    "inputs": [
+      "src/main/java/com/poword/App.java",
+      "src/main/java/com/poword/service/ArticlePacketExportService.java",
+      "src/main/java/com/poword/dao/ArticleDao.java",
+      "src/main/java/com/poword/dao/DictDao.java",
+      "README.md",
+      "docs/article-packet-export.md"
+    ],
+    "allowedWriteScope": [
+      "src/main/java/com/poword/",
+      "src/test/java/com/poword/",
+      "README.md",
+      "docs/"
+    ],
+    "acceptanceChecks": [
+      "A maintainer can export one persisted study packet's vocabulary deck by source id or source key without changing source code.",
+      "The TSV output keeps vocabulary rows in persisted article order and uses a deterministic column order.",
+      "Words without dictionary matches still appear in the deck with an explicit unresolved marker instead of being omitted.",
+      "Invalid identifiers or arguments return a clear usage or validation message.",
+      "Focused tests cover identifier handling, ordering, and unresolved vocabulary output."
+    ],
+    "expectedArtifacts": [
+      "A single-packet flashcard deck export command",
+      "TSV rendering logic backed by persisted packet data",
+      "Focused CLI and deck-format tests",
+      "Updated maintainer usage documentation"
+    ],
+    "nextConsumer": "poword-maintainer",
+    "metadata": {
+      "focusArea": "flashcard-export",
+      "generatedByPlanner": true,
+      "plannerRunId": "run-20260421140854-2bqnn4",
+      "generatedAt": "2026-04-21T14:16:15.885Z",
+      "generationMode": "auto-replenishment"
+    }
+  },
+  {
+    "id": "POW-018",
+    "title": "Batch-export daily flashcard decks for successful study packets",
+    "status": "backlog",
+    "goal": "Poword should let a maintainer export the latest successful study packets for one day as a deterministic set of flashcard deck files so recent vocabulary work can be reviewed in one pass.",
+    "instructions": [
+      "Add a batch export path that selects source stories for a requested day, keeps only stories whose latest outcome is successful and that have a linked finalized article, and writes one deck file per eligible packet.",
+      "Reuse the single-packet deck export flow instead of duplicating packet and vocabulary assembly logic.",
+      "Write files in deterministic order with collision-safe names derived from persisted article data, and surface concise skip reasons for failed, unfinished, or missing-finalized stories.",
+      "Cover batch ordering, skip behavior, and filename collision handling with focused tests and document the supported workflow."
+    ],
+    "inputs": [
+      "src/main/java/com/poword/App.java",
+      "src/main/java/com/poword/service/ArticlePacketExportService.java",
+      "src/main/java/com/poword/dao/ArticleDao.java",
+      "README.md",
+      "docs/article-packet-export.md"
+    ],
+    "allowedWriteScope": [
+      "src/main/java/com/poword/",
+      "src/test/java/com/poword/",
+      "README.md",
+      "docs/"
+    ],
+    "acceptanceChecks": [
+      "A maintainer can export one day's eligible study packets as deck files in a chosen output directory.",
+      "Only source stories with successful latest outcomes and linked finalized articles produce deck files by default.",
+      "Deck files are written in deterministic order with stable, collision-safe names.",
+      "The command surfaces clear skip reasons for failed, unfinished, or missing-finalized stories.",
+      "Focused tests cover ordering, eligibility filtering, and collision handling."
+    ],
+    "expectedArtifacts": [
+      "A daily flashcard deck batch export command",
+      "Deterministic file naming and write behavior",
+      "Focused batch export tests",
+      "Updated maintainer batch-export documentation"
+    ],
+    "nextConsumer": "poword-maintainer",
+    "metadata": {
+      "focusArea": "flashcard-batch-export",
+      "generatedByPlanner": true,
+      "plannerRunId": "run-20260421140854-2bqnn4",
+      "generatedAt": "2026-04-21T14:16:15.885Z",
+      "generationMode": "auto-replenishment"
+    }
+  },
+  {
+    "id": "POW-019",
+    "title": "Write a deterministic export index for offline study materials",
+    "status": "backlog",
+    "goal": "Poword should emit a machine-readable index alongside batch study exports so maintainers can see what was exported, what was skipped, and which file belongs to each persisted source story without opening each file manually.",
+    "instructions": [
+      "When a batch study-material export runs, write one index file in the output directory that lists exported items and skipped items in the same deterministic order as the batch run.",
+      "Include stable identifying fields such as source id, source key, title, latest outcome, and the generated relative file path for each exported item.",
+      "Record concise skip reasons for ineligible stories and keep the index contract stable enough for later tooling to consume.",
+      "Cover index ordering, relative paths, and skip-report contents with focused tests and document the index shape."
+    ],
+    "inputs": [
+      "src/main/java/com/poword/App.java",
+      "src/main/java/com/poword/service/ArticlePacketExportService.java",
+      "src/main/java/com/poword/dao/ArticleDao.java",
+      "README.md",
+      "docs/article-packet-export.md"
+    ],
+    "allowedWriteScope": [
+      "src/main/java/com/poword/",
+      "src/test/java/com/poword/",
+      "README.md",
+      "docs/"
+    ],
+    "acceptanceChecks": [
+      "A batch study-material export writes one deterministic index file beside the generated output files.",
+      "The index includes exported items with stable identifiers and relative output paths.",
+      "Skipped stories appear in the index with concise reasons instead of disappearing silently.",
+      "Rerunning against the same underlying data produces the same index ordering and item metadata.",
+      "Focused tests cover exported-item ordering, relative path generation, and skip reporting."
+    ],
+    "expectedArtifacts": [
+      "An offline study-material index writer",
+      "A documented index file contract",
+      "Focused index-generation tests"
+    ],
+    "nextConsumer": "poword-maintainer",
+    "metadata": {
+      "focusArea": "study-export-index",
+      "generatedByPlanner": true,
+      "plannerRunId": "run-20260421140854-2bqnn4",
+      "generatedAt": "2026-04-21T14:16:15.885Z",
+      "generationMode": "auto-replenishment"
+    }
+  },
+  {
+    "id": "POW-020",
+    "title": "Package one selected day as a deterministic offline study bundle",
+    "status": "verified",
+    "goal": "Poword should let a maintainer export all successful study materials for one selected day into a stable folder tree that can be reviewed or shared without opening the database.",
+    "instructions": [
+      "Add one command that accepts a `YYYY-MM-DD` day and an output directory and writes one bundle directory for that day instead of printing a single packet to stdout.",
+      "Reuse the existing per-packet export paths for study content and vocabulary output so the new command assembles files and naming rather than duplicating render logic.",
+      "Give each packet a stable folder name derived from persisted source identity and write a top-level manifest that lists packet folders and relative file names in deterministic order.",
+      "Return a clear failure when the selected day has no successful study packets or when the output directory cannot be prepared, and document the supported command and layout."
+    ],
+    "inputs": [
+      "src/main/java/com/poword/App.java",
+      "src/main/java/com/poword/service/ArticlePacketExportService.java",
+      "src/main/java/com/poword/dao/ArticleDao.java",
+      "src/test/java/com/poword/AppTest.java",
+      "src/test/java/com/poword/service/ArticlePacketExportServiceTest.java",
+      "README.md",
+      "docs/article-packet-export.md"
+    ],
+    "allowedWriteScope": [
+      "src/main/java/com/poword/",
+      "src/test/java/com/poword/",
+      "README.md",
+      "docs/"
+    ],
+    "acceptanceChecks": [
+      "A maintainer can export one selected day to a deterministic directory layout with no manual database inspection.",
+      "The bundle contains one stable packet folder per successful study packet plus a top-level manifest with relative references.",
+      "Repeated exports for the same day produce the same folder names and ordering when the underlying data is unchanged.",
+      "Focused tests cover empty-day handling and deterministic bundle layout, and product docs describe the command and directory structure."
+    ],
+    "expectedArtifacts": [
+      "A day-bundle export command",
+      "A deterministic bundle manifest format",
+      "Focused tests and updated usage documentation"
+    ],
+    "nextConsumer": "poword-maintainer",
+    "metadata": {
+      "focusArea": "study-bundle-export",
+      "generatedByPlanner": true,
+      "plannerRunId": "run-20260421142923-exzbmy",
+      "generatedAt": "2026-04-21T14:35:09.911Z",
+      "generationMode": "auto-replenishment"
+    }
+  },
+  {
+    "id": "POW-021",
+    "title": "Refresh an existing study bundle by rewriting only changed packets",
+    "status": "backlog",
+    "goal": "Poword should be able to rerun a day bundle export efficiently by updating only the packet folders whose persisted study data changed.",
+    "instructions": [
+      "Add bundle state tracking that records the persisted identity needed to detect whether a packet folder is unchanged, updated, new, or no longer present for the selected day.",
+      "When refreshing an existing bundle, keep unchanged packet files intact, rewrite changed packet folders deterministically, and remove stale packet folders that no longer belong in the day export.",
+      "Print a concise summary of added, updated, unchanged, and removed packet folders so maintainers can tell what happened without comparing directories by hand.",
+      "Cover unchanged, updated, and removed packet scenarios with focused tests and extend the bundle documentation with the refresh behavior."
+    ],
+    "inputs": [
+      "src/main/java/com/poword/App.java",
+      "src/main/java/com/poword/service/ArticlePacketExportService.java",
+      "src/main/java/com/poword/dao/ArticleDao.java",
+      "src/test/java/com/poword/AppTest.java",
+      "src/test/java/com/poword/service/ArticlePacketExportServiceTest.java",
+      "README.md",
+      "docs/article-packet-export.md"
+    ],
+    "allowedWriteScope": [
+      "src/main/java/com/poword/",
+      "src/test/java/com/poword/",
+      "README.md",
+      "docs/"
+    ],
+    "acceptanceChecks": [
+      "Refreshing an existing bundle leaves unchanged packet folders untouched while deterministically rewriting only changed packet folders.",
+      "Packets removed from the selected day are removed from the bundle and from the top-level manifest.",
+      "The refresh command prints added, updated, unchanged, and removed counts for the run.",
+      "Focused tests cover unchanged, changed, and removed packet cases, and docs explain how refresh decisions are made."
+    ],
+    "expectedArtifacts": [
+      "Bundle refresh state tracking",
+      "Incremental bundle update logic",
+      "Focused tests and refreshed operator documentation"
+    ],
+    "nextConsumer": "poword-maintainer",
+    "metadata": {
+      "focusArea": "study-bundle-refresh",
+      "generatedByPlanner": true,
+      "plannerRunId": "run-20260421142923-exzbmy",
+      "generatedAt": "2026-04-21T14:35:09.911Z",
+      "generationMode": "auto-replenishment"
+    }
+  },
+  {
+    "id": "POW-022",
+    "title": "Archive a generated study bundle as a shareable zip export",
+    "status": "backlog",
+    "goal": "Poword should let a maintainer turn a generated study bundle into one portable zip file with stable contents and paths for offline sharing.",
+    "instructions": [
+      "Add one archive command or flag that zips an already generated bundle directory for a selected day using only relative paths inside the archive.",
+      "Keep archive entry ordering deterministic and derive the archive file name from the selected day so repeated exports are predictable.",
+      "Define explicit overwrite behavior for an existing archive target instead of silently replacing files.",
+      "Cover archive creation and repeat-run behavior with focused tests and document how maintainers generate and replace an archive."
+    ],
+    "inputs": [
+      "src/main/java/com/poword/App.java",
+      "src/main/java/com/poword/service/ArticlePacketExportService.java",
+      "src/test/java/com/poword/AppTest.java",
+      "src/test/java/com/poword/service/ArticlePacketExportServiceTest.java",
+      "README.md",
+      "docs/article-packet-export.md"
+    ],
+    "allowedWriteScope": [
+      "src/main/java/com/poword/",
+      "src/test/java/com/poword/",
+      "README.md",
+      "docs/"
+    ],
+    "acceptanceChecks": [
+      "A maintainer can create one zip archive from a generated study bundle for a selected day.",
+      "The archive contains the bundle manifest and packet files with deterministic relative paths and entry order.",
+      "Existing archive targets follow documented overwrite or replace behavior instead of being silently clobbered.",
+      "Focused tests cover archive contents and repeat-run behavior, and docs describe the archive command and output naming."
+    ],
+    "expectedArtifacts": [
+      "A study-bundle archive command",
+      "Deterministic zip creation logic",
+      "Focused tests and archive usage documentation"
+    ],
+    "nextConsumer": "poword-maintainer",
+    "metadata": {
+      "focusArea": "study-bundle-archive",
+      "generatedByPlanner": true,
+      "plannerRunId": "run-20260421142923-exzbmy",
+      "generatedAt": "2026-04-21T14:35:09.911Z",
+      "generationMode": "auto-replenishment"
+    }
+  },
+  {
+    "id": "POW-023",
+    "title": "Add a day-level generation report beside the offline study bundle",
+    "status": "verified",
+    "goal": "Poword should export a concise day report that shows which source stories were included, which were skipped, and the latest recorded outcome for each story so maintainers can understand a day's coverage without opening SQLite.",
+    "instructions": [
+      "Extend the existing `export-day-bundle` flow to write one additional day report file beside `manifest.json` inside the bundle directory.",
+      "Include every persisted `SOURCE` article for the selected day, not only the successful packets that already get exported.",
+      "For each row, include deterministic identifiers and the latest persisted outcome fields such as source id, source key, title, outcome status, outcome time, concise outcome detail, finalized article id when present, and packet folder when the story is included in the bundle.",
+      "Keep the report ordering stable for the same database state by using explicit sort rules such as source key and source id.",
+      "Do not rerun generation or recompute outcomes during export; rely on already persisted state.",
+      "Document the new report and add focused tests for mixed success, failure, and no-finalized-article cases."
+    ],
+    "inputs": [
+      "src/main/java/com/poword/App.java",
+      "src/main/java/com/poword/service/ArticlePacketExportService.java",
+      "src/main/java/com/poword/dao/ArticleDao.java",
+      "src/main/java/com/poword/model/ArticleModel.java",
+      "src/test/java/com/poword/AppTest.java",
+      "src/test/java/com/poword/service/ArticlePacketExportServiceTest.java",
+      "README.md",
+      "docs/article-packet-export.md"
+    ],
+    "allowedWriteScope": [
+      "src/main/java/com/poword/",
+      "src/main/java/com/poword/service/",
+      "src/main/java/com/poword/dao/",
+      "src/main/java/com/poword/model/",
+      "src/test/java/com/poword/",
+      "README.md",
+      "docs/"
+    ],
+    "acceptanceChecks": [
+      "Running `export-day-bundle` writes a deterministic day report file inside the exported bundle.",
+      "The day report includes successful, failed, and unfinished source stories for the selected date instead of silently showing only exported packets.",
+      "Rows for successful stories include the packet folder or finalized article linkage needed to find the exported study materials.",
+      "Re-exporting the same day with unchanged data produces the same report ordering and content.",
+      "Focused tests cover mixed day outcomes and at least one skipped story that has no finalized article."
+    ],
+    "expectedArtifacts": [
+      "Updated day-bundle export code",
+      "A new day-level report artifact in each exported bundle",
+      "Focused CLI and export tests",
+      "Updated maintainer-facing documentation"
+    ],
+    "nextConsumer": "poword-maintainer",
+    "metadata": {
+      "focusArea": "study-bundle-reporting",
+      "generatedByPlanner": true,
+      "plannerRunId": "run-20260421164327-6f7eav",
+      "generatedAt": "2026-04-22T00:57:49.183Z",
+      "generationMode": "auto-replenishment"
+    }
+  },
+  {
+    "id": "POW-024",
+    "title": "Export a deduplicated day vocabulary deck alongside the study bundle",
+    "status": "backlog",
+    "goal": "Poword should produce one consolidated vocabulary deck for the selected day so maintainers can review or import the day's study words without opening each packet folder separately.",
+    "instructions": [
+      "Add one bundle-level vocabulary deck file that is generated during `export-day-bundle` from the successful packets already included in the bundle.",
+      "Deduplicate repeated words across packets by normalized word text and use explicit stable tie-break rules so the same data yields the same row order.",
+      "For each exported word, include enough detail to study or import it offline, such as word text, dictionary resolution status, dictionary fields when available, and deterministic references back to the source packet or source story.",
+      "Preserve unresolved words instead of dropping them, and make their unresolved status explicit in the export.",
+      "Keep empty-day behavior clear by still producing a valid bundle-level deck artifact or an intentionally empty file with a documented header.",
+      "Add focused tests for duplicate words across packets, unresolved dictionary rows, and stable ordering."
+    ],
+    "inputs": [
+      "src/main/java/com/poword/App.java",
+      "src/main/java/com/poword/service/ArticlePacketExportService.java",
+      "src/main/java/com/poword/dao/ArticleDao.java",
+      "src/main/java/com/poword/dao/DictDao.java",
+      "src/main/java/com/poword/model/ArticleLinkedWordModel.java",
+      "src/test/java/com/poword/AppTest.java",
+      "src/test/java/com/poword/service/ArticlePacketExportServiceTest.java",
+      "README.md",
+      "docs/article-packet-export.md"
+    ],
+    "allowedWriteScope": [
+      "src/main/java/com/poword/",
+      "src/main/java/com/poword/service/",
+      "src/main/java/com/poword/dao/",
+      "src/main/java/com/poword/model/",
+      "src/test/java/com/poword/",
+      "README.md",
+      "docs/"
+    ],
+    "acceptanceChecks": [
+      "A successful day-bundle export writes one deterministic bundle-level vocabulary deck in addition to the per-packet `words.tsv` files.",
+      "Repeated exports of the same data yield the same row order and the same merged word set.",
+      "Words that appear in multiple packets are exported once with deterministic packet or source references.",
+      "Unresolved words remain visible in the consolidated deck instead of being discarded.",
+      "Focused tests cover duplicate-word merging, unresolved rows, and empty-day behavior."
+    ],
+    "expectedArtifacts": [
+      "A consolidated day vocabulary deck artifact",
+      "Updated export service logic",
+      "Focused export tests",
+      "Updated usage documentation"
+    ],
+    "nextConsumer": "poword-maintainer",
+    "metadata": {
+      "focusArea": "study-bundle-vocabulary",
+      "generatedByPlanner": true,
+      "plannerRunId": "run-20260421164327-6f7eav",
+      "generatedAt": "2026-04-22T00:57:49.183Z",
+      "generationMode": "auto-replenishment"
+    }
+  },
+  {
+    "id": "POW-025",
+    "title": "Validate an exported study bundle against its manifest and packet files",
+    "status": "backlog",
+    "goal": "Poword should let a maintainer verify that an exported study bundle is complete and internally consistent before sharing or reusing it.",
+    "instructions": [
+      "Add a small command-line validation entry point that accepts an existing bundle directory path and performs read-only checks.",
+      "Validate that `manifest.json` is readable, that its packet count matches the listed packets, and that every referenced packet folder and required file is present.",
+      "Check the required packet files already defined by the bundle contract, including source article text, both study article files, and the packet word deck.",
+      "Return clear non-zero exit codes and human-readable failure messages for malformed manifests, missing files, and packet count mismatches.",
+      "Do not mutate the bundle during validation.",
+      "Add focused tests for a valid bundle, a missing packet file, and an invalid or inconsistent manifest, and document the supported command."
+    ],
+    "inputs": [
+      "src/main/java/com/poword/App.java",
+      "src/main/java/com/poword/service/ArticlePacketExportService.java",
+      "src/test/java/com/poword/AppTest.java",
+      "src/test/java/com/poword/service/ArticlePacketExportServiceTest.java",
+      "README.md",
+      "docs/article-packet-export.md"
+    ],
+    "allowedWriteScope": [
+      "src/main/java/com/poword/",
+      "src/main/java/com/poword/service/",
+      "src/test/java/com/poword/",
+      "README.md",
+      "docs/"
+    ],
+    "acceptanceChecks": [
+      "Poword exposes one documented command that validates an existing study bundle directory without rewriting it.",
+      "A valid bundle passes validation with exit code `0`.",
+      "Missing required packet files, malformed manifests, and packet count mismatches each produce a clear failure message and a non-zero exit code.",
+      "Focused tests cover at least one passing bundle and representative failure cases."
+    ],
+    "expectedArtifacts": [
+      "A bundle validation CLI path",
+      "Read-only bundle validation logic",
+      "Focused validation tests",
+      "Updated maintainer-facing documentation"
+    ],
+    "nextConsumer": "poword-maintainer",
+    "metadata": {
+      "focusArea": "study-bundle-validation",
+      "generatedByPlanner": true,
+      "plannerRunId": "run-20260421164327-6f7eav",
+      "generatedAt": "2026-04-22T00:57:49.183Z",
+      "generationMode": "auto-replenishment"
+    }
+  },
+  {
+    "id": "POW-026",
+    "title": "Add a strict completeness mode to day bundle export",
+    "status": "verified",
+    "goal": "Poword should let a maintainer treat skipped or unfinished stories in a selected day as a failed export so the day bundle flow can be used safely in automation without manually inspecting the report.",
+    "instructions": [
+      "Extend `export-day-bundle` with an explicit strict option such as `--require-complete` instead of changing the current default behavior.",
+      "Keep writing the bundle directory, `manifest.json`, and `day-report.tsv` when file export succeeds, but return a distinct non-zero exit when the selected day contains any skipped or unfinished source story.",
+      "Print a concise operator-visible summary that includes included and skipped counts plus the first blocking reason.",
+      "Cover all-success, mixed-outcome, and empty-day behavior with focused CLI and service tests, and document the new exit contract."
+    ],
+    "inputs": [
+      "src/main/java/com/poword/App.java",
+      "src/main/java/com/poword/service/ArticlePacketExportService.java",
+      "src/main/java/com/poword/service/ArticlePacketExportException.java",
+      "src/test/java/com/poword/AppTest.java",
+      "src/test/java/com/poword/service/ArticlePacketExportServiceTest.java",
+      "README.md",
+      "docs/article-packet-export.md"
+    ],
+    "allowedWriteScope": [
+      "src/main/java/com/poword/",
+      "src/main/java/com/poword/service/",
+      "src/test/java/com/poword/",
+      "README.md",
+      "docs/"
+    ],
+    "acceptanceChecks": [
+      "Running `export-day-bundle` without the new option preserves the current exit behavior and bundle contents.",
+      "Running `export-day-bundle` with the strict option exits `0` for an all-success day and exits with a distinct non-zero code when the day has skipped or unfinished stories.",
+      "A strict-mode completeness failure still leaves a readable `manifest.json` and `day-report.tsv` at the requested output path.",
+      "Focused tests cover empty-day, mixed-outcome, and all-success cases, and the docs list the new option and exit behavior."
+    ],
+    "expectedArtifacts": [
+      "A strict completeness option for day bundle export",
+      "Updated CLI exit handling and operator messaging",
+      "Focused CLI and export service tests",
+      "Updated export documentation"
+    ],
+    "nextConsumer": "poword-maintainer",
+    "metadata": {
+      "focusArea": "study-bundle-completeness",
+      "generatedByPlanner": true,
+      "plannerRunId": "run-20260422010540-u9a971",
+      "generatedAt": "2026-04-22T01:09:07.683Z",
+      "generationMode": "auto-replenishment"
+    }
+  },
+  {
+    "id": "POW-027",
+    "title": "Add a dry-run preview for day bundle export",
+    "status": "backlog",
+    "goal": "Poword should let a maintainer preview what a selected day bundle would include or skip before any files are written.",
+    "instructions": [
+      "Add a dry-run mode to `export-day-bundle` that reuses the real selection and ordering rules but does not create the bundle directory or staging files.",
+      "Report the planned bundle path, included packet count, skipped story count, and deterministic packet folder names that would be written for the selected day.",
+      "Keep the preview output concise and deterministic so maintainers can compare runs or use it in scripts.",
+      "Add focused tests that prove dry-run and real export produce the same packet ordering for the same persisted data, and document the preview workflow."
+    ],
+    "inputs": [
+      "src/main/java/com/poword/App.java",
+      "src/main/java/com/poword/service/ArticlePacketExportService.java",
+      "src/test/java/com/poword/AppTest.java",
+      "src/test/java/com/poword/service/ArticlePacketExportServiceTest.java",
+      "README.md",
+      "docs/article-packet-export.md"
+    ],
+    "allowedWriteScope": [
+      "src/main/java/com/poword/",
+      "src/main/java/com/poword/service/",
+      "src/test/java/com/poword/",
+      "README.md",
+      "docs/"
+    ],
+    "acceptanceChecks": [
+      "Dry-run mode performs the same day selection and packet ordering as the real export path but does not create output directories or files.",
+      "The preview output includes deterministic included and skipped counts plus the planned packet folder names for included stories.",
+      "Invalid arguments still return clear usage or validation errors instead of silently falling back to a real export.",
+      "Focused tests cover dry-run with no stories, mixed outcomes, and a day that would export multiple packets."
+    ],
+    "expectedArtifacts": [
+      "A dry-run preview mode for day bundle export",
+      "Deterministic preview output for operators",
+      "Focused CLI and export service tests",
+      "Updated usage documentation"
+    ],
+    "nextConsumer": "poword-maintainer",
+    "metadata": {
+      "focusArea": "study-bundle-preview",
+      "generatedByPlanner": true,
+      "plannerRunId": "run-20260422010540-u9a971",
+      "generatedAt": "2026-04-22T01:09:07.683Z",
+      "generationMode": "auto-replenishment"
+    }
+  },
+  {
+    "id": "POW-028",
+    "title": "Record file hashes in the exported bundle manifest",
+    "status": "backlog",
+    "goal": "Poword should include stable per-file hashes in `manifest.json` so copied or shared study bundles can be checked later without reopening the database.",
+    "instructions": [
+      "Extend the day bundle manifest with an explicit hash algorithm field and deterministic hashes for each exported packet file and top-level report file.",
+      "Compute hashes from the written bundle files so the manifest reflects the actual exported contents instead of in-memory strings.",
+      "Keep the existing folder layout and packet ordering unchanged while updating the manifest schema in a versioned, documented way.",
+      "Add focused tests for hash stability across identical exports and for hash changes when one packet file changes."
+    ],
+    "inputs": [
+      "src/main/java/com/poword/service/ArticlePacketExportService.java",
+      "src/test/java/com/poword/service/ArticlePacketExportServiceTest.java",
+      "README.md",
+      "docs/article-packet-export.md"
+    ],
+    "allowedWriteScope": [
+      "src/main/java/com/poword/service/",
+      "src/test/java/com/poword/",
+      "README.md",
+      "docs/"
+    ],
+    "acceptanceChecks": [
+      "The exported `manifest.json` declares the hash algorithm and records deterministic hashes for `day-report.tsv` and each file inside every exported packet folder.",
+      "Re-exporting the same persisted data produces the same manifest hashes and packet ordering.",
+      "Changing one exported packet file changes only the affected hash entries while leaving unrelated packet hashes stable.",
+      "Docs describe the new manifest fields and how maintainers can use them when copying or sharing a bundle."
+    ],
+    "expectedArtifacts": [
+      "An updated bundle manifest with file hash metadata",
+      "Focused tests for manifest hash stability",
+      "Updated manifest documentation"
+    ],
+    "nextConsumer": "poword-maintainer",
+    "metadata": {
+      "focusArea": "study-bundle-manifest",
+      "generatedByPlanner": true,
+      "plannerRunId": "run-20260422010540-u9a971",
+      "generatedAt": "2026-04-22T01:09:07.683Z",
+      "generationMode": "auto-replenishment"
+    }
+  },
+  {
+    "id": "POW-029",
+    "title": "Add machine-readable day bundle summary counts and decision breakdowns",
+    "status": "verified",
+    "goal": "Poword should publish deterministic included and skipped story totals for a selected-day bundle so maintainers and automation can understand the export result without parsing the full TSV report.",
+    "instructions": [
+      "Extend the exported day bundle metadata to include stable counts for included packets, skipped source stories, and a breakdown by decision reason.",
+      "Keep the summary derived from the same selected-day records as `day-report.tsv` so empty, mixed, and all-success days stay internally consistent.",
+      "Surface a concise run summary from the command line without changing the existing folder layout or current exit-code meanings.",
+      "Document the summary fields and their relationship to the day report."
+    ],
+    "inputs": [
+      "src/main/java/com/poword/App.java",
+      "src/main/java/com/poword/service/ArticlePacketExportService.java",
+      "src/test/java/com/poword/AppTest.java",
+      "src/test/java/com/poword/service/ArticlePacketExportServiceTest.java",
+      "docs/article-packet-export.md",
+      "README.md"
+    ],
+    "allowedWriteScope": [
+      "src/main/java/com/poword/",
+      "src/main/java/com/poword/service/",
+      "src/test/java/com/poword/",
+      "docs/",
+      "README.md"
+    ],
+    "acceptanceChecks": [
+      "The exported bundle metadata includes deterministic totals for exported packets and skipped selected-day source stories.",
+      "Skipped stories are grouped by a stable decision-reason breakdown that matches the rows in `day-report.tsv`.",
+      "Empty-day, mixed-outcome, and all-success exports produce consistent summary fields across reruns.",
+      "Focused tests cover the new summary contract and command-line output."
+    ],
+    "expectedArtifacts": [
+      "Updated day bundle metadata contract",
+      "Concise command-line export summary",
+      "Focused export summary tests",
+      "Updated export documentation"
+    ],
+    "nextConsumer": "poword-maintainer",
+    "metadata": {
+      "focusArea": "study-bundle-summary",
+      "generatedByPlanner": true,
+      "plannerRunId": "run-20260422011532-9pgimz",
+      "generatedAt": "2026-04-22T01:18:51.925Z",
+      "generationMode": "auto-replenishment"
+    }
+  },
+  {
+    "id": "POW-030",
+    "title": "Write per-packet metadata beside exported study files",
+    "status": "backlog",
+    "goal": "Poword should emit one machine-readable metadata file per exported packet so downstream tools can inspect packet identity and contents without re-parsing the top-level report or TSV deck.",
+    "instructions": [
+      "Add a stable metadata file inside each included packet folder with source identifiers, finalized article identifier, exported file paths, and vocabulary counts.",
+      "Derive packet-level counts from the persisted linked-word export so resolved and unresolved vocabulary totals reflect the actual packet contents.",
+      "Keep packet metadata deterministic across reruns with unchanged source data.",
+      "Document the per-packet metadata file and its fixed fields."
+    ],
+    "inputs": [
+      "src/main/java/com/poword/service/ArticlePacketExportService.java",
+      "src/test/java/com/poword/service/ArticlePacketExportServiceTest.java",
+      "docs/article-packet-export.md",
+      "README.md"
+    ],
+    "allowedWriteScope": [
+      "src/main/java/com/poword/service/",
+      "src/test/java/com/poword/service/",
+      "docs/",
+      "README.md"
+    ],
+    "acceptanceChecks": [
+      "Each included packet folder contains a deterministic metadata file alongside the exported article and vocabulary files.",
+      "The metadata file records source and finalized article identifiers plus stable relative file references for that packet.",
+      "Resolved and unresolved vocabulary counts in packet metadata match the generated `words.tsv` content.",
+      "Focused tests cover packets with fully resolved vocabulary and packets with unresolved rows."
+    ],
+    "expectedArtifacts": [
+      "Per-packet metadata file generation",
+      "Packet metadata test coverage",
+      "Updated packet export documentation"
+    ],
+    "nextConsumer": "poword-maintainer",
+    "metadata": {
+      "focusArea": "study-packet-metadata",
+      "generatedByPlanner": true,
+      "plannerRunId": "run-20260422011532-9pgimz",
+      "generatedAt": "2026-04-22T01:18:51.925Z",
+      "generationMode": "auto-replenishment"
+    }
+  },
+  {
+    "id": "POW-031",
+    "title": "Add a vocabulary-complete mode for day bundle export",
+    "status": "backlog",
+    "goal": "Poword should let maintainers fail a selected-day bundle when exported packets still contain unresolved vocabulary rows, so offline study materials do not silently ship with incomplete lookup data.",
+    "instructions": [
+      "Add an optional `export-day-bundle` mode that checks exported packets for unresolved vocabulary rows after the bundle is written.",
+      "Preserve current default behavior when the new mode is not requested.",
+      "When the mode fails, provide a clear operator-visible reason and identify which packet or packets still contain unresolved vocabulary.",
+      "Document the new mode, its exit behavior, and where unresolved packet details can be found in the exported bundle."
+    ],
+    "inputs": [
+      "src/main/java/com/poword/App.java",
+      "src/main/java/com/poword/service/ArticlePacketExportService.java",
+      "src/main/java/com/poword/service/ArticlePacketExportException.java",
+      "src/test/java/com/poword/AppTest.java",
+      "src/test/java/com/poword/service/ArticlePacketExportServiceTest.java",
+      "docs/article-packet-export.md",
+      "README.md"
+    ],
+    "allowedWriteScope": [
+      "src/main/java/com/poword/",
+      "src/main/java/com/poword/service/",
+      "src/test/java/com/poword/",
+      "docs/",
+      "README.md"
+    ],
+    "acceptanceChecks": [
+      "Without the new mode, day bundle export keeps its current behavior and exit codes.",
+      "With the new mode enabled, any included packet that contains unresolved vocabulary causes a dedicated non-zero failure after the bundle is published.",
+      "Maintainers can identify unresolved packet coverage from exported bundle artifacts without opening SQLite.",
+      "Focused tests cover both passing and failing runs with deterministic output."
+    ],
+    "expectedArtifacts": [
+      "New bundle export quality mode",
+      "Dedicated unresolved-vocabulary failure handling",
+      "Focused quality-gate tests",
+      "Updated operator documentation"
+    ],
+    "nextConsumer": "poword-maintainer",
+    "metadata": {
+      "focusArea": "study-bundle-vocabulary-quality",
+      "generatedByPlanner": true,
+      "plannerRunId": "run-20260422011532-9pgimz",
+      "generatedAt": "2026-04-22T01:18:51.925Z",
+      "generationMode": "auto-replenishment"
+    }
+  },
+  {
+    "id": "POW-032",
+    "title": "Surface packet vocabulary coverage in day bundle outputs",
+    "status": "verified",
+    "goal": "Poword should show whether each exported packet is vocabulary-complete from the bundle-level artifacts so maintainers can spot unresolved study material without opening every packet deck.",
+    "instructions": [
+      "Extend the day bundle outputs so each included packet records stable vocabulary coverage fields such as total word rows, resolved word rows, unresolved word rows, and a boolean completeness flag.",
+      "Add the coverage data to existing machine-readable bundle artifacts instead of creating a separate packet format first.",
+      "Derive the counts from the same linked-word data used to render `words.tsv` so the bundle-level coverage matches the exported packet contents exactly.",
+      "Keep packet ordering, folder names, and current bundle file layout unchanged apart from the added fields.",
+      "Add focused tests for fully resolved packets, packets with unresolved rows, and deterministic reruns with unchanged data.",
+      "Document the new coverage fields and where maintainers can inspect them."
+    ],
+    "inputs": [
+      "src/main/java/com/poword/service/ArticlePacketExportService.java",
+      "src/test/java/com/poword/service/ArticlePacketExportServiceTest.java",
+      "docs/article-packet-export.md",
+      "README.md"
+    ],
+    "allowedWriteScope": [
+      "src/main/java/com/poword/service/",
+      "src/test/java/com/poword/service/",
+      "docs/",
+      "README.md"
+    ],
+    "acceptanceChecks": [
+      "Each included packet is represented in bundle artifacts with deterministic vocabulary coverage fields.",
+      "Coverage counts match the actual exported `words.tsv` content for the same packet.",
+      "Packets with unresolved vocabulary are identifiable from bundle-level artifacts without opening SQLite.",
+      "Re-exporting unchanged data keeps the same packet order and the same coverage values."
+    ],
+    "expectedArtifacts": [
+      "Updated bundle manifest or report fields for packet vocabulary coverage",
+      "Focused export-service tests for resolved and unresolved packet coverage",
+      "Updated bundle export documentation"
+    ],
+    "nextConsumer": "poword-maintainer",
+    "metadata": {
+      "focusArea": "study-bundle-vocabulary-coverage",
+      "generatedByPlanner": true,
+      "plannerRunId": "run-20260422012522-eitm7o",
+      "generatedAt": "2026-04-22T01:29:21.405Z",
+      "generationMode": "auto-replenishment"
+    }
+  },
+  {
+    "id": "POW-033",
+    "title": "Emit structured result output when a published day bundle fails completeness",
+    "status": "backlog",
+    "goal": "Poword should return machine-readable bundle result data even when `export-day-bundle` exits non-zero after publishing files, so maintainers and scripts can still locate and assess the written bundle.",
+    "instructions": [
+      "Keep the existing non-zero exit behavior for published-but-incomplete bundle runs.",
+      "When a bundle is written and the command fails its completeness gate, print one structured result payload that includes the bundle path, selected and skipped counts, and the failure reason category.",
+      "Preserve a concise human-readable error message on stderr instead of replacing operator guidance with raw JSON only.",
+      "Keep successful output shape consistent with the current summary contract where practical.",
+      "Add focused CLI tests for success, strict-completeness failure, and argument-validation paths.",
+      "Document the failure-path output contract and how maintainers should read it."
+    ],
+    "inputs": [
+      "src/main/java/com/poword/App.java",
+      "src/main/java/com/poword/service/ArticlePacketExportService.java",
+      "src/main/java/com/poword/service/ArticlePacketExportException.java",
+      "src/test/java/com/poword/AppTest.java",
+      "docs/article-packet-export.md",
+      "README.md"
+    ],
+    "allowedWriteScope": [
+      "src/main/java/com/poword/",
+      "src/main/java/com/poword/service/",
+      "src/test/java/com/poword/",
+      "docs/",
+      "README.md"
+    ],
+    "acceptanceChecks": [
+      "A published bundle that fails completeness still exits non-zero and still writes its bundle files.",
+      "The same failing run also emits one parseable structured result payload with the written bundle path and summary counts.",
+      "Human-readable stderr guidance remains available for maintainers.",
+      "Successful runs keep their current documented success behavior."
+    ],
+    "expectedArtifacts": [
+      "Updated CLI result handling for published-but-failing bundle runs",
+      "Focused App CLI tests for structured failure output",
+      "Updated command documentation"
+    ],
+    "nextConsumer": "poword-maintainer",
+    "metadata": {
+      "focusArea": "study-bundle-failure-output",
+      "generatedByPlanner": true,
+      "plannerRunId": "run-20260422012522-eitm7o",
+      "generatedAt": "2026-04-22T01:29:21.405Z",
+      "generationMode": "auto-replenishment"
+    }
+  },
+  {
+    "id": "POW-034",
+    "title": "Write a bundle issues report for skipped stories and packet quality warnings",
+    "status": "backlog",
+    "goal": "Poword should publish one compact issues artifact beside a day bundle so maintainers can review skipped source stories and packet-level study warnings without parsing the full report or every packet file.",
+    "instructions": [
+      "Add a top-level issues report file beside `manifest.json` and `day-report.tsv` with a stable machine-readable schema.",
+      "List skipped source stories from the selected day with their identifiers, titles, and skip reasons.",
+      "For included packets, record quality warnings that are already visible from exported data, such as unresolved vocabulary coverage, with deterministic packet references.",
+      "Keep the issues report ordering stable across reruns with unchanged data.",
+      "On clean or empty days, still write the issues artifact with an empty but documented payload.",
+      "Add focused tests for mixed skipped and warned bundles plus clean-day behavior, and document the new file."
+    ],
+    "inputs": [
+      "src/main/java/com/poword/service/ArticlePacketExportService.java",
+      "src/test/java/com/poword/service/ArticlePacketExportServiceTest.java",
+      "docs/article-packet-export.md",
+      "README.md"
+    ],
+    "allowedWriteScope": [
+      "src/main/java/com/poword/service/",
+      "src/test/java/com/poword/service/",
+      "docs/",
+      "README.md"
+    ],
+    "acceptanceChecks": [
+      "Each day bundle contains one deterministic issues artifact beside the existing top-level bundle files.",
+      "Skipped stories appear in the issues artifact with stable identifiers and reasons.",
+      "Included packets with unresolved vocabulary warnings appear with deterministic packet references.",
+      "Clean and empty days still produce the issues artifact with a documented empty payload."
+    ],
+    "expectedArtifacts": [
+      "A top-level bundle issues report file",
+      "Focused export-service tests for skipped and warning scenarios",
+      "Updated bundle documentation"
+    ],
+    "nextConsumer": "poword-maintainer",
+    "metadata": {
+      "focusArea": "study-bundle-issues-report",
+      "generatedByPlanner": true,
+      "plannerRunId": "run-20260422012522-eitm7o",
+      "generatedAt": "2026-04-22T01:29:21.405Z",
+      "generationMode": "auto-replenishment"
+    }
+  },
+  {
+    "id": "POW-035",
+    "title": "Roll up packet vocabulary quality into the day bundle summary",
+    "status": "ready",
+    "goal": "Poword should expose bundle-level packet quality totals so maintainers and scripts can judge exported day quality from the existing summary outputs without scanning every packet entry.",
+    "instructions": [
+      "Extend the existing day-bundle summary data to include deterministic rollups derived from per-packet coverage that is already computed during export.",
+      "Add bundle-level counts such as vocabulary-complete packet count, vocabulary-incomplete packet count, total resolved exported words, and total unresolved exported words.",
+      "Keep the current success-path summary fields and ordering stable, only appending the new quality fields.",
+      "Reflect the same quality rollups in both the machine-readable success output and the bundle manifest summary so operators do not have to reconcile two different contracts.",
+      "Treat empty-day exports as first-class cases with explicit zero-valued quality totals.",
+      "Add focused tests for empty-day, all-complete, and mixed-quality exports, and document the added fields."
+    ],
+    "inputs": [
+      "src/main/java/com/poword/App.java",
+      "src/main/java/com/poword/service/ArticlePacketExportService.java",
+      "src/test/java/com/poword/AppTest.java",
+      "src/test/java/com/poword/service/ArticlePacketExportServiceTest.java",
+      "README.md",
+      "docs/article-packet-export.md"
+    ],
+    "allowedWriteScope": [
+      "src/main/java/com/poword/",
+      "src/main/java/com/poword/service/",
+      "src/test/java/com/poword/",
+      "README.md",
+      "docs/"
+    ],
+    "acceptanceChecks": [
+      "Successful day-bundle runs emit bundle-level packet quality totals in the structured summary output without removing existing documented fields.",
+      "The exported manifest summary includes the same packet quality totals as the CLI success output.",
+      "Mixed-quality days report both complete and incomplete packet totals correctly from the same exported packet set.",
+      "Empty-day exports report zero-valued packet and vocabulary quality totals deterministically.",
+      "Focused tests cover empty-day, all-complete, and mixed-quality summary cases."
+    ],
+    "expectedArtifacts": [
+      "Extended bundle summary contract for vocabulary quality rollups",
+      "Updated CLI success summary output",
+      "Focused summary coverage tests",
+      "Updated export documentation"
+    ],
+    "nextConsumer": "poword-maintainer",
+    "metadata": {
+      "focusArea": "study-bundle-quality-summary",
+      "generatedByPlanner": true,
+      "plannerRunId": "run-20260422013439-bm5hyq",
+      "generatedAt": "2026-04-22T01:37:57.796Z",
+      "generationMode": "auto-replenishment"
+    }
+  },
+  {
+    "id": "POW-036",
+    "title": "Expose included-packet vocabulary coverage directly in the day report",
+    "status": "backlog",
+    "goal": "Poword should let maintainers audit exported packet vocabulary quality from `day-report.tsv` alone instead of cross-checking `manifest.json` for each included packet.",
+    "instructions": [
+      "Extend the top-level day report with deterministic packet-quality columns for included rows, such as vocabulary-complete status plus resolved, unresolved, and total exported word counts.",
+      "Populate the new columns only for included packet rows and leave them blank for skipped stories so skipped reporting remains readable.",
+      "Derive the row-level counts from the same export path that writes packet decks so the report stays aligned with `words.tsv` and manifest packet entries.",
+      "Preserve stable row ordering and existing decision columns while documenting the new report schema.",
+      "Add focused tests for mixed-outcome days where one included packet is complete and another is incomplete."
+    ],
+    "inputs": [
+      "src/main/java/com/poword/service/ArticlePacketExportService.java",
+      "src/test/java/com/poword/service/ArticlePacketExportServiceTest.java",
+      "README.md",
+      "docs/article-packet-export.md"
+    ],
+    "allowedWriteScope": [
+      "src/main/java/com/poword/service/",
+      "src/test/java/com/poword/service/",
+      "README.md",
+      "docs/"
+    ],
+    "acceptanceChecks": [
+      "Included rows in `day-report.tsv` contain deterministic packet-quality columns that match the exported packet coverage data.",
+      "Skipped rows retain their current decision and reason reporting and leave packet-quality cells blank.",
+      "For mixed-quality exports, the report distinguishes complete and incomplete included packets without changing row order.",
+      "Focused tests verify that day-report quality values match both `words.tsv` coverage and manifest packet coverage for the same packets."
+    ],
+    "expectedArtifacts": [
+      "An expanded day report schema with packet-quality columns",
+      "Updated export-service tests for mixed packet quality",
+      "Updated day-report documentation"
+    ],
+    "nextConsumer": "poword-maintainer",
+    "metadata": {
+      "focusArea": "study-bundle-day-report-quality",
+      "generatedByPlanner": true,
+      "plannerRunId": "run-20260422013439-bm5hyq",
+      "generatedAt": "2026-04-22T01:37:57.796Z",
+      "generationMode": "auto-replenishment"
+    }
+  },
+  {
+    "id": "POW-037",
+    "title": "Write an unresolved vocabulary worklist beside the day bundle",
+    "status": "backlog",
+    "goal": "Poword should publish one focused artifact that lists unresolved exported words by packet so maintainers can repair dictionary gaps without opening every packet deck.",
+    "instructions": [
+      "Add one top-level unresolved-vocabulary artifact beside the existing bundle files that contains only unresolved words from included packets.",
+      "For each unresolved row, include stable identifiers that let a maintainer trace the gap back to the exported packet and source story, such as packet folder, source key, finalized article id, word order, and word text.",
+      "Order the worklist deterministically by packet order and persisted word order so repeated exports of unchanged data produce the same file.",
+      "Keep clean and empty days explicit by still writing the artifact with a documented header or empty payload.",
+      "Do not duplicate resolved words in this artifact.",
+      "Add focused tests for a mixed-quality day, a fully resolved day, and an empty day, and document the new file."
+    ],
+    "inputs": [
+      "src/main/java/com/poword/service/ArticlePacketExportService.java",
+      "src/test/java/com/poword/service/ArticlePacketExportServiceTest.java",
+      "README.md",
+      "docs/article-packet-export.md"
+    ],
+    "allowedWriteScope": [
+      "src/main/java/com/poword/service/",
+      "src/test/java/com/poword/service/",
+      "README.md",
+      "docs/"
+    ],
+    "acceptanceChecks": [
+      "Each day bundle contains one deterministic unresolved-vocabulary artifact beside the existing top-level bundle files.",
+      "The artifact lists only unresolved exported words and includes enough stable identifiers to locate the affected packet and source story.",
+      "Repeated exports of unchanged data produce the same unresolved-word ordering and contents.",
+      "Clean and empty days still write the artifact with a documented empty result.",
+      "Focused tests cover mixed-quality, fully resolved, and empty-day exports."
+    ],
+    "expectedArtifacts": [
+      "A top-level unresolved vocabulary worklist artifact",
+      "Focused unresolved-word export tests",
+      "Updated bundle documentation"
+    ],
+    "nextConsumer": "poword-maintainer",
+    "metadata": {
+      "focusArea": "study-bundle-unresolved-worklist",
+      "generatedByPlanner": true,
+      "plannerRunId": "run-20260422013439-bm5hyq",
+      "generatedAt": "2026-04-22T01:37:57.796Z",
+      "generationMode": "auto-replenishment"
+    }
+  }
+]
