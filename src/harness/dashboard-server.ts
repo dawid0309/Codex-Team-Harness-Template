@@ -1,5 +1,5 @@
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
-import { readdir, readFile } from "node:fs/promises";
+import { readdir, readFile, writeFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import path from "node:path";
 import { URL } from "node:url";
@@ -25,7 +25,16 @@ import {
   stopBackgroundWorker,
   type HarnessCliArgs,
 } from "./worker-controller";
-import type { HarnessPlanView, HarnessRunBoard, HarnessRunEvent, HarnessTaskNode } from "./types";
+import type {
+  ExternalCaseStatus,
+  ExternalDirectionBrief,
+  ExternalTargetCase,
+  ExternalTargetConfig,
+  HarnessPlanView,
+  HarnessRunBoard,
+  HarnessRunEvent,
+  HarnessTaskNode,
+} from "./types";
 
 type DashboardServerOptions = {
   controlRepoRoot: string;
@@ -38,6 +47,40 @@ type DashboardActionBody = {
   runId?: string;
   task?: string;
   model?: string;
+  planningDirectionNote?: string | null;
+  executionDirectionNote?: string | null;
+  directionBrief?: {
+    activeTrack?: string | null;
+    productGoal?: string | null;
+    userExperience?: string | null;
+    platformScope?: string | null;
+    implementationPreference?: string | null;
+    constraintsText?: string | null;
+    avoidText?: string | null;
+    successSignalsText?: string | null;
+    notes?: string | null;
+  };
+  createCase?: {
+    title?: string;
+    goal?: string;
+    status?: ExternalCaseStatus;
+    track?: string | null;
+    instructionsText?: string;
+    onlyReady?: boolean;
+  };
+  updateCase?: {
+    id?: string;
+    title?: string;
+    goal?: string;
+    status?: ExternalCaseStatus;
+    track?: string | null;
+    instructionsText?: string;
+  };
+  makeOnlyReadyCaseId?: string;
+  rebalance?: {
+    activeTrack?: string | null;
+    promoteCaseId?: string | null;
+  };
 };
 
 function json(response: ServerResponse, statusCode: number, payload: unknown) {
@@ -124,6 +167,428 @@ async function loadTargets(options: DashboardServerOptions) {
       adapterConfigPath: resolved.adapterConfigPath,
     };
   });
+}
+
+function resolveConfigRelativePath(configPath: string, candidate: string) {
+  return path.isAbsolute(candidate) ? candidate : path.join(path.dirname(configPath), candidate);
+}
+
+function splitTextareaLines(value: string | null | undefined) {
+  return (value ?? "")
+    .split(/\r?\n/)
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
+function trimNullable(value: string | null | undefined) {
+  const trimmed = value?.trim() ?? "";
+  return trimmed ? trimmed : null;
+}
+
+function normalizeCaseTrack(value: string | null | undefined) {
+  return trimNullable(value);
+}
+
+function normalizeDirectionBrief(
+  existing: ExternalDirectionBrief | undefined,
+  update: DashboardActionBody["directionBrief"],
+): ExternalDirectionBrief {
+  return {
+    activeTrack: normalizeCaseTrack(update?.activeTrack) ?? existing?.activeTrack ?? null,
+    productGoal: trimNullable(update?.productGoal) ?? existing?.productGoal ?? null,
+    userExperience: trimNullable(update?.userExperience) ?? existing?.userExperience ?? null,
+    platformScope: trimNullable(update?.platformScope) ?? existing?.platformScope ?? null,
+    implementationPreference: trimNullable(update?.implementationPreference) ?? existing?.implementationPreference ?? null,
+    constraints: update && "constraintsText" in update
+      ? splitTextareaLines(update.constraintsText)
+      : (existing?.constraints ?? []),
+    avoid: update && "avoidText" in update
+      ? splitTextareaLines(update.avoidText)
+      : (existing?.avoid ?? []),
+    successSignals: update && "successSignalsText" in update
+      ? splitTextareaLines(update.successSignalsText)
+      : (existing?.successSignals ?? []),
+    notes: trimNullable(update?.notes) ?? existing?.notes ?? null,
+  };
+}
+
+async function resolveTargetFiles(options: DashboardServerOptions, targetId: string) {
+  const registry = await loadTargetRegistry(options.controlRepoRoot, options.targetRegistryPath);
+  const target = resolveTargetRegistration(options.controlRepoRoot, registry, targetId);
+  const configPath = target.adapterConfigPath;
+  const config = JSON.parse(await readFile(configPath, "utf8")) as ExternalTargetConfig;
+  const casesPath = resolveConfigRelativePath(configPath, config.casesPath);
+  const cases = existsSync(casesPath)
+    ? (JSON.parse(await readFile(casesPath, "utf8")) as ExternalTargetCase[])
+    : [];
+  return {
+    target,
+    configPath,
+    config,
+    casesPath,
+    cases,
+  };
+}
+
+async function writeExternalTargetConfig(configPath: string, config: ExternalTargetConfig) {
+  await writeFile(configPath, `${JSON.stringify(config, null, 2)}\n`, "utf8");
+}
+
+async function writeExternalTargetCases(casesPath: string, cases: ExternalTargetCase[]) {
+  await writeFile(casesPath, `${JSON.stringify(cases, null, 2)}\n`, "utf8");
+}
+
+function deriveCasePrefix(cases: ExternalTargetCase[], config: ExternalTargetConfig) {
+  const existingPrefix = cases
+    .map((item) => item.id.match(/^([A-Z]+)-\d+$/)?.[1])
+    .find(Boolean);
+  if (existingPrefix) {
+    return existingPrefix;
+  }
+  return (config.id || config.label)
+    .toUpperCase()
+    .replace(/[^A-Z0-9]+/g, "")
+    .slice(0, 3) || "CASE";
+}
+
+function nextCaseNumber(cases: ExternalTargetCase[]) {
+  return cases.reduce((max, item) => {
+    const match = item.id.match(/-(\d+)$/);
+    return match ? Math.max(max, Number(match[1])) : max;
+  }, 0) + 1;
+}
+
+function normalizeCaseStatus(value: string | undefined): ExternalCaseStatus {
+  const allowed = new Set<ExternalCaseStatus>(["backlog", "ready", "in_progress", "blocked", "review", "parked", "verified", "done"]);
+  return value && allowed.has(value as ExternalCaseStatus) ? (value as ExternalCaseStatus) : "backlog";
+}
+
+function defaultNextConsumer(config: ExternalTargetConfig) {
+  const slug = (config.id || config.label)
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+  return `${slug || "target"}-maintainer`;
+}
+
+function isUnfinishedCaseStatus(status: ExternalCaseStatus) {
+  return ["backlog", "ready", "in_progress", "blocked", "review"].includes(status);
+}
+
+function buildQueueCounts(cases: ExternalTargetCase[], activeTrack: string | null) {
+  const countsByStatus = {
+    ready: 0,
+    backlog: 0,
+    in_progress: 0,
+    blocked: 0,
+    review: 0,
+    parked: 0,
+    verified: 0,
+    done: 0,
+  };
+
+  let activeBacklog = 0;
+  for (const item of cases) {
+    countsByStatus[item.status] += 1;
+    if (
+      item.status === "backlog"
+      && (!activeTrack || (item.track ?? null) === activeTrack)
+    ) {
+      activeBacklog += 1;
+    }
+  }
+
+  return {
+    ...countsByStatus,
+    total: cases.length,
+    activeBacklog,
+  };
+}
+
+function collectKnownTracks(cases: ExternalTargetCase[], activeTrack: string | null) {
+  const tracks = new Set<string>();
+  if (activeTrack) {
+    tracks.add(activeTrack);
+  }
+  for (const item of cases) {
+    if (item.track) {
+      tracks.add(item.track);
+    }
+  }
+  return Array.from(tracks).sort((left, right) => left.localeCompare(right));
+}
+
+function applyOnlyReadyPromotion(
+  cases: ExternalTargetCase[],
+  targetCaseId: string,
+  activeTrack: string | null,
+): ExternalTargetCase[] {
+  return cases.map((item): ExternalTargetCase => {
+    if (item.id === targetCaseId) {
+      return {
+        ...item,
+        status: "ready" as const,
+      };
+    }
+
+    if (item.status !== "ready") {
+      return item;
+    }
+
+    const nextStatus: ExternalCaseStatus = activeTrack && item.track !== activeTrack ? "parked" : "backlog";
+    return {
+      ...item,
+      status: nextStatus,
+    };
+  }).map((item): ExternalTargetCase => ({ ...item, track: item.track ?? null }));
+}
+
+function rebalanceCasesForTrack(
+  cases: ExternalTargetCase[],
+  activeTrack: string,
+  promoteCaseId: string | null,
+): { cases: ExternalTargetCase[]; parkedCount: number; promotedCaseId: string | null } {
+  let parkedCount = 0;
+  let promotedCaseId: string | null = null;
+
+  const rebalanced = cases.map((item): ExternalTargetCase => {
+    const track = item.track ?? null;
+    if (isUnfinishedCaseStatus(item.status) && track !== activeTrack) {
+      if (item.status !== "parked") {
+        parkedCount += 1;
+      }
+      return {
+        ...item,
+        track,
+        status: "parked" as const,
+      };
+    }
+
+    return {
+      ...item,
+      track,
+    };
+  });
+
+  if (!promoteCaseId) {
+    return {
+      cases: rebalanced,
+      parkedCount,
+      promotedCaseId,
+    };
+  }
+
+  const selected = rebalanced.find((item) => item.id === promoteCaseId);
+  if (!selected) {
+    throw new Error(`Cannot promote missing case "${promoteCaseId}".`);
+  }
+  if ((selected.track ?? null) !== activeTrack) {
+    throw new Error(`Cannot promote ${promoteCaseId} because its track does not match active track "${activeTrack}".`);
+  }
+
+  promotedCaseId = promoteCaseId;
+  return {
+    cases: applyOnlyReadyPromotion(rebalanced, promoteCaseId, activeTrack),
+    parkedCount,
+    promotedCaseId,
+  };
+}
+
+async function readDirectionData(options: DashboardServerOptions, targetId: string) {
+  const { config, cases, casesPath, configPath } = await resolveTargetFiles(options, targetId);
+  const normalizedCases = cases.map((item) => ({
+    ...item,
+    track: item.track ?? null,
+  }));
+  const activeTrack = config.directionBrief?.activeTrack ?? null;
+  return {
+    targetId,
+    configPath: path.relative(options.controlRepoRoot, configPath).replaceAll("\\", "/"),
+    casesPath: path.relative(options.controlRepoRoot, casesPath).replaceAll("\\", "/"),
+    direction: {
+      planningBasePrompt: config.planning?.basePrompt ?? "",
+      planningDirectionNote: config.planning?.directionNote ?? "",
+      executionBasePrompt: config.execution.basePrompt ?? "",
+      executionDirectionNote: config.execution.directionNote ?? "",
+      planningEnabled: config.planning?.enabled ?? false,
+      batchSize: config.planning?.batchSize ?? null,
+      brief: {
+        activeTrack,
+        productGoal: config.directionBrief?.productGoal ?? "",
+        userExperience: config.directionBrief?.userExperience ?? "",
+        platformScope: config.directionBrief?.platformScope ?? "",
+        implementationPreference: config.directionBrief?.implementationPreference ?? "",
+        constraints: config.directionBrief?.constraints ?? [],
+        avoid: config.directionBrief?.avoid ?? [],
+        successSignals: config.directionBrief?.successSignals ?? [],
+        notes: config.directionBrief?.notes ?? "",
+      },
+    },
+    queueCounts: buildQueueCounts(normalizedCases, activeTrack),
+    tracks: collectKnownTracks(normalizedCases, activeTrack),
+    cases: normalizedCases,
+  };
+}
+
+async function updateDirectionData(options: DashboardServerOptions, targetId: string, body: DashboardActionBody) {
+  const { config, configPath, cases, casesPath } = await resolveTargetFiles(options, targetId);
+  let mutated = false;
+  let createdCaseId: string | null = null;
+
+  if ("planningDirectionNote" in body) {
+    if (!config.planning) {
+      config.planning = {
+        enabled: true,
+        batchSize: 3,
+        basePrompt: `Plan the next development cases for ${config.label}.`,
+        directionNote: null,
+        model: null,
+        maxRecentHandoffs: 5,
+        firstGeneratedStatus: "ready",
+        remainingGeneratedStatus: "backlog",
+      };
+    }
+    config.planning.directionNote = trimNullable(body.planningDirectionNote);
+    mutated = true;
+  }
+
+  if ("executionDirectionNote" in body) {
+    config.execution.directionNote = trimNullable(body.executionDirectionNote);
+    mutated = true;
+  }
+
+  if (body.directionBrief) {
+    config.directionBrief = normalizeDirectionBrief(config.directionBrief, body.directionBrief);
+    mutated = true;
+  }
+
+  if (body.updateCase?.id) {
+    const caseIndex = cases.findIndex((item) => item.id === body.updateCase?.id);
+    if (caseIndex >= 0) {
+      const current = cases[caseIndex];
+      cases[caseIndex] = {
+        ...current,
+        title: body.updateCase.title?.trim() || current.title,
+        goal: body.updateCase.goal?.trim() || current.goal,
+        status: body.updateCase.status ? normalizeCaseStatus(body.updateCase.status) : current.status,
+        track: normalizeCaseTrack(body.updateCase.track) ?? current.track ?? null,
+        instructions: splitTextareaLines(body.updateCase.instructionsText).length > 0
+          ? splitTextareaLines(body.updateCase.instructionsText)
+          : current.instructions,
+      };
+      mutated = true;
+    }
+  }
+
+  if (body.makeOnlyReadyCaseId) {
+    const targetCaseId = body.makeOnlyReadyCaseId;
+    for (let index = 0; index < cases.length; index += 1) {
+      const current = cases[index];
+      if (current.id === targetCaseId) {
+        cases[index] = {
+          ...current,
+          status: "ready",
+        };
+        mutated = true;
+      } else if (current.status === "ready") {
+        cases[index] = {
+          ...current,
+          status: "backlog",
+        };
+        mutated = true;
+      }
+    }
+  }
+
+  if (body.createCase?.title?.trim() && body.createCase.goal?.trim()) {
+    const prefix = deriveCasePrefix(cases, config);
+    const caseId = `${prefix}-${String(nextCaseNumber(cases)).padStart(3, "0")}`;
+    const normalizedStatus = body.createCase.onlyReady ? "ready" : normalizeCaseStatus(body.createCase.status);
+    if (body.createCase.onlyReady) {
+      for (let index = 0; index < cases.length; index += 1) {
+        if (cases[index]?.status === "ready") {
+          cases[index] = {
+            ...cases[index],
+            status: "backlog",
+          };
+        }
+      }
+    }
+    const nextCase: ExternalTargetCase = {
+      id: caseId,
+      title: body.createCase.title.trim(),
+      status: normalizedStatus,
+      track: normalizeCaseTrack(body.createCase.track) ?? config.directionBrief?.activeTrack ?? null,
+      goal: body.createCase.goal.trim(),
+      instructions: splitTextareaLines(body.createCase.instructionsText),
+      inputs: [],
+      allowedWriteScope: config.execution.defaultWriteScope,
+      acceptanceChecks: [],
+      expectedArtifacts: [],
+      nextConsumer: defaultNextConsumer(config),
+      metadata: {
+        createdFromDashboard: true,
+      },
+    };
+    cases.push(nextCase);
+    mutated = true;
+    createdCaseId = caseId;
+  }
+
+  if (mutated) {
+    await Promise.all([
+      writeExternalTargetConfig(configPath, config),
+      writeExternalTargetCases(casesPath, cases),
+    ]);
+  }
+
+  return {
+    createdCaseId,
+    direction: await readDirectionData(options, targetId),
+  };
+}
+
+async function rebalanceDirectionData(options: DashboardServerOptions, targetId: string, body: DashboardActionBody) {
+  const { config, configPath, cases, casesPath } = await resolveTargetFiles(options, targetId);
+  const requestedActiveTrack = body.rebalance && Object.prototype.hasOwnProperty.call(body.rebalance, "activeTrack")
+    ? normalizeCaseTrack(body.rebalance.activeTrack)
+    : undefined;
+  const promoteCaseId = normalizeCaseTrack(body.rebalance?.promoteCaseId);
+
+  if (!config.directionBrief) {
+    config.directionBrief = {
+      activeTrack: null,
+    };
+  }
+
+  if (requestedActiveTrack !== undefined) {
+    config.directionBrief.activeTrack = requestedActiveTrack;
+  }
+
+  const activeTrack = config.directionBrief.activeTrack ?? null;
+  if (!activeTrack) {
+    throw new Error(`Target "${targetId}" does not have an active track yet.`);
+  }
+
+  const result = rebalanceCasesForTrack(
+    cases.map((item) => ({
+      ...item,
+      track: item.track ?? null,
+    })),
+    activeTrack,
+    promoteCaseId,
+  );
+
+  await Promise.all([
+    writeExternalTargetConfig(configPath, config),
+    writeExternalTargetCases(casesPath, result.cases),
+  ]);
+
+  return {
+    parkedCount: result.parkedCount,
+    promotedCaseId: result.promotedCaseId,
+    direction: await readDirectionData(options, targetId),
+  };
 }
 
 function fallbackBoardFromDetail(targetId: string, runId: string, detail: Awaited<ReturnType<typeof readRunArtifacts>>) {
@@ -658,7 +1123,7 @@ function htmlPage(port: number) {
     select, input, button, textarea {
       font: inherit;
     }
-    select, input {
+    select, input, textarea {
       width: 100%;
       border-radius: 12px;
       border: 1px solid var(--border);
@@ -666,10 +1131,18 @@ function htmlPage(port: number) {
       background: #fff;
       color: var(--ink);
     }
+    textarea {
+      min-height: 96px;
+      resize: vertical;
+      line-height: 1.5;
+    }
     .actions {
       display: grid;
       grid-template-columns: repeat(2, minmax(0, 1fr));
       gap: 10px;
+    }
+    .actions.compact {
+      grid-template-columns: repeat(3, minmax(0, 1fr));
     }
     button {
       border: none;
@@ -733,6 +1206,90 @@ function htmlPage(port: number) {
       max-height: 430px;
       overflow: auto;
       padding-right: 2px;
+    }
+    .direction-layout {
+      display: grid;
+      grid-template-columns: 1.15fr 1fr;
+      gap: 18px;
+      align-items: start;
+    }
+    .direction-stack {
+      display: grid;
+      gap: 12px;
+    }
+    .direction-box {
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      background: rgba(255, 250, 240, 0.88);
+      padding: 14px;
+    }
+    .direction-box h4 {
+      margin: 0 0 10px;
+      font-size: 0.9rem;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      color: var(--muted);
+    }
+    .direction-caption {
+      margin: 0 0 14px;
+      color: var(--muted);
+      font-size: 0.84rem;
+      line-height: 1.55;
+    }
+    .brief-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 12px;
+    }
+    .brief-field-wide {
+      grid-column: 1 / -1;
+    }
+    .direction-case-list {
+      display: grid;
+      gap: 10px;
+      max-height: 440px;
+      overflow: auto;
+      padding-right: 4px;
+    }
+    .direction-case {
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      padding: 12px;
+      background: var(--panel);
+      cursor: pointer;
+      text-align: left;
+    }
+    .direction-case.active {
+      border-color: rgba(12, 124, 89, 0.45);
+      box-shadow: inset 0 0 0 1px rgba(12, 124, 89, 0.2);
+      background: rgba(235, 248, 242, 0.92);
+    }
+    .direction-case-top {
+      display: flex;
+      justify-content: space-between;
+      gap: 10px;
+      align-items: center;
+      margin-bottom: 8px;
+    }
+    .direction-case-id {
+      font-family: var(--mono);
+      font-size: 0.83rem;
+      color: var(--muted);
+    }
+    .direction-case-title {
+      font-weight: 700;
+      margin-bottom: 6px;
+      line-height: 1.4;
+    }
+    .direction-case-goal {
+      color: var(--muted);
+      font-size: 0.86rem;
+      line-height: 1.5;
+    }
+    .direction-meta, .direction-note {
+      color: var(--muted);
+      font-size: 0.82rem;
+      line-height: 1.5;
     }
     .run {
       border: 1px solid var(--border);
@@ -1021,7 +1578,10 @@ function htmlPage(port: number) {
       transform: translateY(0);
     }
     @media (max-width: 1100px) {
-      .hero, .layout, .two-col, .split, .grid, .lane-grid {
+      .hero, .layout, .two-col, .split, .grid, .lane-grid, .direction-layout, .plan-layout {
+        grid-template-columns: 1fr;
+      }
+      .brief-grid {
         grid-template-columns: 1fr;
       }
     }
@@ -1090,6 +1650,136 @@ function htmlPage(port: number) {
           <div style="height: 12px"></div>
           <div id="statusBadge" class="badge">idle</div>
           <p class="muted" id="summaryText" style="margin-top: 12px;">Waiting for data.</p>
+        </div>
+
+        <div class="panel">
+          <h2>Direction Studio</h2>
+          <div class="direction-layout">
+            <div class="direction-stack">
+              <div class="direction-box">
+                <h4>Direction Brief</h4>
+                <p class="direction-caption">Set the real product direction here. This brief feeds future planning and execution prompts, while keeping all harness state in Foundry.</p>
+                <div class="brief-grid">
+                  <div>
+                    <label for="briefActiveTrackInput">Active track</label>
+                    <input id="briefActiveTrackInput" placeholder="windows-overlay" />
+                  </div>
+                  <div class="brief-field-wide">
+                    <label for="briefProductGoalInput">Product goal</label>
+                    <textarea id="briefProductGoalInput" placeholder="What product outcome should Poword move toward?"></textarea>
+                  </div>
+                  <div class="brief-field-wide">
+                    <label for="briefUserExperienceInput">User experience</label>
+                    <textarea id="briefUserExperienceInput" placeholder="Describe the interaction you want users to feel."></textarea>
+                  </div>
+                  <div>
+                    <label for="briefPlatformScopeInput">Platform scope</label>
+                    <textarea id="briefPlatformScopeInput" placeholder="Windows-wide, desktop-only, browser-free, etc."></textarea>
+                  </div>
+                  <div>
+                    <label for="briefImplementationPreferenceInput">Implementation preference</label>
+                    <textarea id="briefImplementationPreferenceInput" placeholder="Preferred language/runtime or architecture bias."></textarea>
+                  </div>
+                  <div>
+                    <label for="briefConstraintsInput">Constraints</label>
+                    <textarea id="briefConstraintsInput" placeholder="One hard constraint per line."></textarea>
+                  </div>
+                  <div>
+                    <label for="briefAvoidInput">Avoid</label>
+                    <textarea id="briefAvoidInput" placeholder="One thing to avoid per line."></textarea>
+                  </div>
+                  <div>
+                    <label for="briefSuccessSignalsInput">Success signals</label>
+                    <textarea id="briefSuccessSignalsInput" placeholder="One success signal per line."></textarea>
+                  </div>
+                  <div>
+                    <label for="briefNotesInput">Operator notes</label>
+                    <textarea id="briefNotesInput" placeholder="Extra context that helps but does not change the core brief."></textarea>
+                  </div>
+                </div>
+                <div class="actions" style="margin-top: 12px;">
+                  <button id="saveDirectionBtn" class="primary">Save brief</button>
+                  <button id="reloadDirectionBtn" class="secondary">Reload</button>
+                </div>
+              </div>
+
+              <div class="direction-box">
+                <h4>Prompt Notes</h4>
+                <label for="planningDirectionInput">Planner direction note</label>
+                <textarea id="planningDirectionInput" placeholder="Tell the planner what direction to bias toward next."></textarea>
+                <label for="executionDirectionInput">Executor direction note</label>
+                <textarea id="executionDirectionInput" placeholder="Tell the executor how to approach the next implementation cycle."></textarea>
+                <p class="direction-note" style="margin-top: 12px;">Use these for short, tactical steering. Use the brief above for durable product direction and implementation bias.</p>
+              </div>
+
+              <div class="direction-box">
+                <h4>Create Next Case</h4>
+                <label for="newCaseTitleInput">Title</label>
+                <input id="newCaseTitleInput" placeholder="Short case title" />
+                <label for="newCaseGoalInput">Goal</label>
+                <textarea id="newCaseGoalInput" placeholder="What should this next cycle achieve?"></textarea>
+                <label for="newCaseStatusInput">Initial status</label>
+                <select id="newCaseStatusInput">
+                  <option value="ready">ready</option>
+                  <option value="backlog">backlog</option>
+                  <option value="parked">parked</option>
+                </select>
+                <label for="newCaseTrackInput">Track</label>
+                <input id="newCaseTrackInput" placeholder="Defaults to the active track" />
+                <label for="newCaseInstructionsInput">Instructions</label>
+                <textarea id="newCaseInstructionsInput" placeholder="One instruction per line."></textarea>
+                <div class="actions" style="margin-top: 12px;">
+                  <button id="createCaseBtn" class="primary">Create case</button>
+                  <button id="createReadyCaseBtn" class="secondary">Create as only ready</button>
+                </div>
+              </div>
+            </div>
+
+            <div class="direction-stack">
+              <div class="direction-box">
+                <h4>Case Queue</h4>
+                <div id="directionQueueSummary" class="direction-meta" style="margin-bottom: 10px;">No queue data yet.</div>
+                <label for="directionTrackFilterInput">Track filter</label>
+                <select id="directionTrackFilterInput">
+                  <option value="all">all cases</option>
+                  <option value="active">active track only</option>
+                  <option value="parked">parked only</option>
+                </select>
+                <div id="directionCaseList" class="direction-case-list"></div>
+              </div>
+
+              <div class="direction-box">
+                <h4>Selected Case</h4>
+                <div id="selectedCaseIdLabel" class="direction-meta">No case selected.</div>
+                <label for="caseEditorTitleInput">Title</label>
+                <input id="caseEditorTitleInput" placeholder="Case title" />
+                <label for="caseEditorStatusInput">Status</label>
+                <select id="caseEditorStatusInput">
+                  <option value="backlog">backlog</option>
+                  <option value="ready">ready</option>
+                  <option value="in_progress">in_progress</option>
+                  <option value="blocked">blocked</option>
+                  <option value="review">review</option>
+                  <option value="parked">parked</option>
+                  <option value="verified">verified</option>
+                  <option value="done">done</option>
+                </select>
+                <label for="caseEditorTrackInput">Track</label>
+                <input id="caseEditorTrackInput" placeholder="Stable work track" />
+                <label for="caseEditorGoalInput">Goal</label>
+                <textarea id="caseEditorGoalInput" placeholder="Case goal"></textarea>
+                <label for="caseEditorInstructionsInput">Instructions</label>
+                <textarea id="caseEditorInstructionsInput" placeholder="One instruction per line."></textarea>
+                <div class="actions compact" style="margin-top: 12px;">
+                  <button id="saveCaseBtn" class="primary">Save case</button>
+                  <button id="makeOnlyReadyBtn" class="secondary">Make only ready</button>
+                  <button id="rebalanceBtn" class="secondary">Park off-track work</button>
+                  <button id="rebalancePromoteBtn" class="secondary">Rebalance + promote selected</button>
+                  <button id="refreshDirectionBtn" class="secondary">Refresh queue</button>
+                </div>
+              </div>
+            </div>
+          </div>
         </div>
 
         <div class="panel">
@@ -1196,8 +1886,11 @@ function htmlPage(port: number) {
       selectedLane: null,
       selectedTaskId: null,
       selectedPlanStepId: null,
+      selectedDirectionCaseId: null,
+      directionTrackFilter: "all",
       board: null,
       plan: null,
+      direction: null,
       pollHandle: null,
       busy: false,
     };
@@ -1211,6 +1904,31 @@ function htmlPage(port: number) {
     const taskList = document.getElementById("taskList");
     const planList = document.getElementById("planList");
     const planDetail = document.getElementById("planDetail");
+    const briefActiveTrackInput = document.getElementById("briefActiveTrackInput");
+    const briefProductGoalInput = document.getElementById("briefProductGoalInput");
+    const briefUserExperienceInput = document.getElementById("briefUserExperienceInput");
+    const briefPlatformScopeInput = document.getElementById("briefPlatformScopeInput");
+    const briefImplementationPreferenceInput = document.getElementById("briefImplementationPreferenceInput");
+    const briefConstraintsInput = document.getElementById("briefConstraintsInput");
+    const briefAvoidInput = document.getElementById("briefAvoidInput");
+    const briefSuccessSignalsInput = document.getElementById("briefSuccessSignalsInput");
+    const briefNotesInput = document.getElementById("briefNotesInput");
+    const planningDirectionInput = document.getElementById("planningDirectionInput");
+    const executionDirectionInput = document.getElementById("executionDirectionInput");
+    const directionCaseList = document.getElementById("directionCaseList");
+    const directionQueueSummary = document.getElementById("directionQueueSummary");
+    const directionTrackFilterInput = document.getElementById("directionTrackFilterInput");
+    const newCaseTitleInput = document.getElementById("newCaseTitleInput");
+    const newCaseGoalInput = document.getElementById("newCaseGoalInput");
+    const newCaseStatusInput = document.getElementById("newCaseStatusInput");
+    const newCaseTrackInput = document.getElementById("newCaseTrackInput");
+    const newCaseInstructionsInput = document.getElementById("newCaseInstructionsInput");
+    const selectedCaseIdLabel = document.getElementById("selectedCaseIdLabel");
+    const caseEditorTitleInput = document.getElementById("caseEditorTitleInput");
+    const caseEditorStatusInput = document.getElementById("caseEditorStatusInput");
+    const caseEditorTrackInput = document.getElementById("caseEditorTrackInput");
+    const caseEditorGoalInput = document.getElementById("caseEditorGoalInput");
+    const caseEditorInstructionsInput = document.getElementById("caseEditorInstructionsInput");
 
     function showToast(message, isError = false) {
       toast.textContent = message;
@@ -1250,6 +1968,79 @@ function htmlPage(port: number) {
 
     function formatMultiline(value) {
       return escapeHtml(value || "").replace(/\n/g, "<br />");
+    }
+
+    function directionCases() {
+      return Array.isArray(state.direction?.cases) ? state.direction.cases : [];
+    }
+
+    function selectedDirectionCase() {
+      return directionCases().find((item) => item.id === state.selectedDirectionCaseId) || null;
+    }
+
+    function activeTrack() {
+      return state.direction?.direction?.brief?.activeTrack || null;
+    }
+
+    function ensureTrackFilterOptions(cases) {
+      const current = state.directionTrackFilter || "all";
+      const tracks = Array.isArray(state.direction?.tracks) ? state.direction.tracks : [];
+      const options = [
+        { value: "all", label: "all cases" },
+        { value: "active", label: "active track only" },
+        { value: "parked", label: "parked only" },
+        ...tracks.map((track) => ({ value: "track:" + track, label: "track: " + track })),
+      ];
+      directionTrackFilterInput.innerHTML = options
+        .map((option) => '<option value="' + escapeHtml(option.value) + '">' + escapeHtml(option.label) + '</option>')
+        .join("");
+      const hasCurrent = options.some((option) => option.value === current);
+      directionTrackFilterInput.value = hasCurrent ? current : "all";
+      state.directionTrackFilter = directionTrackFilterInput.value;
+    }
+
+    function filteredDirectionCases() {
+      const filter = state.directionTrackFilter || "all";
+      const cases = directionCases();
+      const currentActiveTrack = activeTrack();
+      if (filter === "all") {
+        return cases;
+      }
+      if (filter === "active") {
+        return cases.filter((item) => item.status !== "parked" && (!currentActiveTrack || item.track === currentActiveTrack));
+      }
+      if (filter === "parked") {
+        return cases.filter((item) => item.status === "parked");
+      }
+      if (filter.startsWith("track:")) {
+        const track = filter.slice("track:".length);
+        return cases.filter((item) => (item.track || "") === track);
+      }
+      return cases;
+    }
+
+    function casePriority(status) {
+      const order = {
+        ready: 0,
+        in_progress: 1,
+        blocked: 2,
+        review: 3,
+        backlog: 4,
+        parked: 5,
+        verified: 6,
+        done: 7,
+      };
+      return Object.prototype.hasOwnProperty.call(order, status) ? order[status] : 99;
+    }
+
+    function sortedDirectionCases() {
+      return [...filteredDirectionCases()].sort((left, right) => {
+        const statusDiff = casePriority(left.status) - casePriority(right.status);
+        if (statusDiff !== 0) {
+          return statusDiff;
+        }
+        return String(left.id).localeCompare(String(right.id));
+      });
     }
 
     async function api(path, options) {
@@ -1333,6 +2124,91 @@ function htmlPage(port: number) {
       }, null, 2);
       document.getElementById("handoffText").textContent = detail.run.handoff || "No handoff loaded.";
       document.getElementById("boardJson").textContent = JSON.stringify(detail.run.board || {}, null, 2);
+    }
+
+    function renderDirectionEditor() {
+      const brief = state.direction?.direction?.brief || {};
+      briefActiveTrackInput.value = brief.activeTrack || "";
+      briefProductGoalInput.value = brief.productGoal || "";
+      briefUserExperienceInput.value = brief.userExperience || "";
+      briefPlatformScopeInput.value = brief.platformScope || "";
+      briefImplementationPreferenceInput.value = brief.implementationPreference || "";
+      briefConstraintsInput.value = Array.isArray(brief.constraints) ? brief.constraints.join("\n") : "";
+      briefAvoidInput.value = Array.isArray(brief.avoid) ? brief.avoid.join("\n") : "";
+      briefSuccessSignalsInput.value = Array.isArray(brief.successSignals) ? brief.successSignals.join("\n") : "";
+      briefNotesInput.value = brief.notes || "";
+      planningDirectionInput.value = state.direction?.direction?.planningDirectionNote || "";
+      executionDirectionInput.value = state.direction?.direction?.executionDirectionNote || "";
+      newCaseTrackInput.value = newCaseTrackInput.value || brief.activeTrack || "";
+      ensureTrackFilterOptions(directionCases());
+
+      const queueCounts = state.direction?.queueCounts || null;
+      directionQueueSummary.textContent = queueCounts
+        ? [
+            "ready: " + String(queueCounts.ready || 0),
+            "active backlog: " + String(queueCounts.activeBacklog || 0),
+            "parked: " + String(queueCounts.parked || 0),
+            "verified: " + String(queueCounts.verified || 0),
+            "done: " + String(queueCounts.done || 0),
+            brief.activeTrack ? "active track: " + brief.activeTrack : null,
+          ].filter(Boolean).join(" | ")
+        : "No queue data yet.";
+
+      const cases = sortedDirectionCases();
+      directionCaseList.innerHTML = "";
+      if (cases.length === 0) {
+        directionCaseList.innerHTML = '<div class="muted">No cases configured for this target yet.</div>';
+        selectedCaseIdLabel.textContent = "No case selected.";
+        caseEditorTitleInput.value = "";
+        caseEditorStatusInput.value = "backlog";
+        caseEditorTrackInput.value = "";
+        caseEditorGoalInput.value = "";
+        caseEditorInstructionsInput.value = "";
+        return;
+      }
+
+      if (!state.selectedDirectionCaseId || !cases.some((item) => item.id === state.selectedDirectionCaseId)) {
+        state.selectedDirectionCaseId = cases[0].id;
+      }
+
+      cases.forEach((item) => {
+        const card = document.createElement("button");
+        card.type = "button";
+        card.className = "direction-case" + (state.selectedDirectionCaseId === item.id ? " active" : "");
+        const instructionCount = Array.isArray(item.instructions) ? item.instructions.length : 0;
+        card.innerHTML =
+          '<div class="direction-case-top"><div class="direction-case-id">' + escapeHtml(item.id) + '</div><span class="' + pillClass(item.status) + '">' + escapeHtml(item.status) + '</span></div>' +
+          '<div class="direction-case-title">' + escapeHtml(item.title) + '</div>' +
+          '<div class="direction-case-goal">' + escapeHtml(item.goal || "No goal recorded.") + '</div>' +
+          '<div class="direction-meta" style="margin-top:8px;">Track: ' + escapeHtml(item.track || "untracked") + ' | Instructions: ' + String(instructionCount) + '</div>';
+        card.addEventListener("click", () => {
+          state.selectedDirectionCaseId = item.id;
+          renderDirectionEditor();
+        });
+        directionCaseList.appendChild(card);
+      });
+
+      const selected = selectedDirectionCase();
+      if (!selected) {
+        return;
+      }
+      selectedCaseIdLabel.textContent = selected.id + " | " + selected.status + " | track: " + (selected.track || "untracked");
+      caseEditorTitleInput.value = selected.title || "";
+      caseEditorStatusInput.value = selected.status || "backlog";
+      caseEditorTrackInput.value = selected.track || "";
+      caseEditorGoalInput.value = selected.goal || "";
+      caseEditorInstructionsInput.value = Array.isArray(selected.instructions) ? selected.instructions.join("\n") : "";
+    }
+
+    async function refreshDirection() {
+      if (!state.targetId) {
+        state.direction = null;
+        renderDirectionEditor();
+        return;
+      }
+      const payload = await api("/api/targets/" + encodeURIComponent(state.targetId) + "/direction");
+      state.direction = payload.direction;
+      renderDirectionEditor();
     }
 
     async function refreshStatus() {
@@ -1617,7 +2493,57 @@ function htmlPage(port: number) {
       }
     }
 
+    async function saveDirectionUpdate(body, successMessage) {
+      if (!state.targetId) return;
+      try {
+        setBusy(true);
+        const payload = await api("/api/targets/" + encodeURIComponent(state.targetId) + "/direction", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body || {}),
+        });
+        state.direction = payload.direction || state.direction;
+        renderDirectionEditor();
+        showToast(successMessage || payload.message || "Direction updated.");
+        await refreshRuns();
+        await refreshStatus();
+        return payload;
+      } catch (error) {
+        showToast(error.message || String(error), true);
+      } finally {
+        setBusy(false);
+      }
+    }
+
+    async function rebalanceDirection(promoteSelected) {
+      if (!state.targetId) return;
+      const selected = selectedDirectionCase();
+      try {
+        setBusy(true);
+        const payload = await api("/api/targets/" + encodeURIComponent(state.targetId) + "/rebalance", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            rebalance: {
+              activeTrack: briefActiveTrackInput.value,
+              promoteCaseId: promoteSelected ? (selected?.id || null) : null,
+            },
+          }),
+        });
+        state.direction = payload.direction || state.direction;
+        renderDirectionEditor();
+        showToast(payload.message || "Rebalanced target backlog.");
+        await refreshRuns();
+        await refreshStatus();
+      } catch (error) {
+        showToast(error.message || String(error), true);
+      } finally {
+        setBusy(false);
+      }
+    }
+
     async function refreshAll() {
+      await refreshDirection();
       await refreshStatus();
       await refreshRuns();
       await refreshRunDetail();
@@ -1631,6 +2557,7 @@ function htmlPage(port: number) {
       state.selectedLane = null;
       state.selectedTaskId = null;
       state.selectedPlanStepId = null;
+      state.selectedDirectionCaseId = null;
       await refreshAll();
     });
 
@@ -1658,10 +2585,143 @@ function htmlPage(port: number) {
       await performAction("stop");
     });
 
+    document.getElementById("saveDirectionBtn").addEventListener("click", async () => {
+      await saveDirectionUpdate({
+        directionBrief: {
+          activeTrack: briefActiveTrackInput.value,
+          productGoal: briefProductGoalInput.value,
+          userExperience: briefUserExperienceInput.value,
+          platformScope: briefPlatformScopeInput.value,
+          implementationPreference: briefImplementationPreferenceInput.value,
+          constraintsText: briefConstraintsInput.value,
+          avoidText: briefAvoidInput.value,
+          successSignalsText: briefSuccessSignalsInput.value,
+          notes: briefNotesInput.value,
+        },
+        planningDirectionNote: planningDirectionInput.value,
+        executionDirectionNote: executionDirectionInput.value,
+      }, "Saved direction brief and prompt notes.");
+    });
+
+    document.getElementById("reloadDirectionBtn").addEventListener("click", async () => {
+      try {
+        setBusy(true);
+        await refreshDirection();
+        showToast("Reloaded direction controls.");
+      } catch (error) {
+        showToast(error.message || String(error), true);
+      } finally {
+        setBusy(false);
+      }
+    });
+
+    document.getElementById("refreshDirectionBtn").addEventListener("click", async () => {
+      try {
+        setBusy(true);
+        await refreshDirection();
+        showToast("Refreshed case queue.");
+      } catch (error) {
+        showToast(error.message || String(error), true);
+      } finally {
+        setBusy(false);
+      }
+    });
+
+    document.getElementById("createCaseBtn").addEventListener("click", async () => {
+      const payload = await saveDirectionUpdate({
+        createCase: {
+          title: newCaseTitleInput.value,
+          goal: newCaseGoalInput.value,
+          status: newCaseStatusInput.value,
+          track: newCaseTrackInput.value,
+          instructionsText: newCaseInstructionsInput.value,
+        },
+      }, "Created new case.");
+      if (payload && payload.createdCaseId) {
+        state.selectedDirectionCaseId = payload.createdCaseId;
+        renderDirectionEditor();
+      }
+      newCaseTitleInput.value = "";
+      newCaseGoalInput.value = "";
+      newCaseInstructionsInput.value = "";
+      newCaseStatusInput.value = "ready";
+      newCaseTrackInput.value = activeTrack() || "";
+    });
+
+    document.getElementById("createReadyCaseBtn").addEventListener("click", async () => {
+      const payload = await saveDirectionUpdate({
+        createCase: {
+          title: newCaseTitleInput.value,
+          goal: newCaseGoalInput.value,
+          status: "ready",
+          track: newCaseTrackInput.value,
+          instructionsText: newCaseInstructionsInput.value,
+          onlyReady: true,
+        },
+      }, "Created new ready case.");
+      if (payload && payload.createdCaseId) {
+        state.selectedDirectionCaseId = payload.createdCaseId;
+        renderDirectionEditor();
+      }
+      newCaseTitleInput.value = "";
+      newCaseGoalInput.value = "";
+      newCaseInstructionsInput.value = "";
+      newCaseStatusInput.value = "ready";
+      newCaseTrackInput.value = activeTrack() || "";
+    });
+
+    document.getElementById("saveCaseBtn").addEventListener("click", async () => {
+      const selected = selectedDirectionCase();
+      if (!selected) {
+        showToast("Select a case first.", true);
+        return;
+      }
+      await saveDirectionUpdate({
+        updateCase: {
+          id: selected.id,
+          title: caseEditorTitleInput.value,
+          status: caseEditorStatusInput.value,
+          track: caseEditorTrackInput.value,
+          goal: caseEditorGoalInput.value,
+          instructionsText: caseEditorInstructionsInput.value,
+        },
+      }, "Saved " + selected.id + ".");
+    });
+
+    document.getElementById("makeOnlyReadyBtn").addEventListener("click", async () => {
+      const selected = selectedDirectionCase();
+      if (!selected) {
+        showToast("Select a case first.", true);
+        return;
+      }
+      await saveDirectionUpdate({
+        makeOnlyReadyCaseId: selected.id,
+      }, "Set " + selected.id + " as the only ready case.");
+    });
+
+    document.getElementById("rebalanceBtn").addEventListener("click", async () => {
+      await rebalanceDirection(false);
+    });
+
+    document.getElementById("rebalancePromoteBtn").addEventListener("click", async () => {
+      const selected = selectedDirectionCase();
+      if (!selected) {
+        showToast("Select a case first.", true);
+        return;
+      }
+      await rebalanceDirection(true);
+    });
+
+    directionTrackFilterInput.addEventListener("change", () => {
+      state.directionTrackFilter = directionTrackFilterInput.value || "all";
+      renderDirectionEditor();
+    });
+
     async function bootstrap() {
       await loadTargets();
       await refreshAll();
       state.pollHandle = window.setInterval(() => {
+        refreshDirection().catch((error) => console.error(error));
         refreshStatus().catch((error) => console.error(error));
         refreshRuns().catch((error) => console.error(error));
         refreshBoard().catch((error) => console.error(error));
@@ -1758,6 +2818,13 @@ export async function startDashboardServer(options: DashboardServerOptions) {
           return;
         }
 
+        if (method === "GET" && segments.length === 4 && segments[3] === "direction") {
+          json(response, 200, {
+            direction: await readDirectionData(options, targetId),
+          });
+          return;
+        }
+
         if (method === "GET" && segments.length === 4 && segments[3] === "runs") {
           json(response, 200, {
             runs: await listRuns(options, targetId),
@@ -1818,6 +2885,27 @@ export async function startDashboardServer(options: DashboardServerOptions) {
         if (method === "POST" && segments.length === 4) {
           const action = segments[3];
           const body = await parseBody(request);
+          if (action === "direction") {
+            const result = await updateDirectionData(options, targetId, body);
+            json(response, 200, {
+              ok: true,
+              message: `Updated direction controls for ${targetId}.`,
+              createdCaseId: result.createdCaseId,
+              direction: result.direction,
+            });
+            return;
+          }
+          if (action === "rebalance") {
+            const result = await rebalanceDirectionData(options, targetId, body);
+            json(response, 200, {
+              ok: true,
+              message: result.promotedCaseId
+                ? `Parked off-track unfinished work and promoted ${result.promotedCaseId} on ${targetId}.`
+                : `Parked ${result.parkedCount} off-track unfinished case(s) on ${targetId}.`,
+              direction: result.direction,
+            });
+            return;
+          }
           await handleAction(options, response, targetId, action, body);
           return;
         }

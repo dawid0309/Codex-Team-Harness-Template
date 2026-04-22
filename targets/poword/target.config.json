@@ -3,6 +3,30 @@
   "label": "Poword",
   "description": "Official Poword product repository driven externally by Codex Harness Foundry.",
   "casesPath": "cases.json",
+  "directionBrief": {
+    "activeTrack": "windows-overlay",
+    "productGoal": "Build a lightweight Poword experience for Windows-wide text selection translation and vocabulary capture.",
+    "userExperience": "When a user selects text anywhere in Windows, Poword should surface a tiny follow-up action, translate quickly on demand, and let the word become a highlighted vocabulary item with minimal interruption.",
+    "platformScope": "Prefer a system-wide Windows experience over a browser-only plugin, and keep the first version focused on lightweight desktop usage.",
+    "implementationPreference": "Use Rust as the preferred implementation language for the Windows-native overlay or helper layer, while keeping the existing Java code only where it is still needed.",
+    "constraints": [
+      "Keep the product runtime lightweight enough for always-on desktop use.",
+      "Do not depend on browser-only extension hooks for the core selection flow.",
+      "Keep the loop tight around selection, translation, highlighting, and saving into the vocabulary notebook.",
+      "Prefer a small Windows-native process instead of a heavier cross-platform desktop shell."
+    ],
+    "avoid": [
+      "Avoid a heavy embedded browser stack for the always-on selection surface.",
+      "Avoid turning the feature into generic browser automation instead of a language product flow.",
+      "Avoid expanding the Java desktop footprint for the always-on overlay if a lighter Rust implementation can own that surface."
+    ],
+    "successSignals": [
+      "Selected text anywhere in Windows can trigger a tiny Poword action affordance.",
+      "Translation feels fast and low-friction.",
+      "Accepted words are visibly marked and stored as vocabulary without extra manual bookkeeping."
+    ],
+    "notes": "This direction should bias planning toward a Rust-first Windows-native interaction layer and lightweight technical choices."
+  },
   "execution": {
     "basePrompt": "Act as a disciplined senior engineer working inside the Poword product repository. Read repository truth first, make one coherent and reviewable unit of progress, stay inside the allowed write scope, and leave the repo ready for external evaluation.",
     "resumePrompt": "Resume the previous Poword development run from repository truth and the saved thread. Continue the same case, make one coherent and reviewable unit of progress, and leave the repo ready for external evaluation.",
@@ -13,7 +37,8 @@
       "docs",
       "pom.xml",
       "README.md"
-    ]
+    ],
+    "directionNote": "Prefer a Rust-first Windows-native implementation for the always-on selection overlay and keep product runtime overhead minimal."
   },
   "evaluation": {
     "commands": [
@@ -36,7 +61,8 @@
     "model": null,
     "maxRecentHandoffs": 5,
     "firstGeneratedStatus": "ready",
-    "remainingGeneratedStatus": "backlog"
+    "remainingGeneratedStatus": "backlog",
+    "directionNote": "Windows-wide selection translation overlay. Plan around a Rust-first implementation for the Windows-native layer, not a heavy embedded stack."
   },
   "doctor": {
     "requiredFiles": [

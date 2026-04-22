@@ -407,12 +407,21 @@ export type HarnessArtifactStore = {
   readJson<T>(relativePath: string): Promise<T>;
 };
 
-export type ExternalCaseStatus = "backlog" | "ready" | "in_progress" | "blocked" | "review" | "verified" | "done";
+export type ExternalCaseStatus =
+  | "backlog"
+  | "ready"
+  | "in_progress"
+  | "blocked"
+  | "review"
+  | "parked"
+  | "verified"
+  | "done";
 
 export type ExternalTargetCase = {
   id: string;
   title: string;
   status: ExternalCaseStatus;
+  track: string | null;
   goal: string;
   instructions?: string[];
   inputs?: string[];
@@ -433,6 +442,7 @@ export type ExternalPlanningConfig = {
   enabled: boolean;
   batchSize: number;
   basePrompt: string;
+  directionNote?: string | null;
   model: string | null;
   maxRecentHandoffs: number;
   firstGeneratedStatus: "ready";
@@ -494,14 +504,28 @@ export type ExternalPlannerPublishResult = {
   generatedCases: ExternalTargetCase[];
 };
 
+export type ExternalDirectionBrief = {
+  activeTrack?: string | null;
+  productGoal?: string | null;
+  userExperience?: string | null;
+  platformScope?: string | null;
+  implementationPreference?: string | null;
+  constraints?: string[];
+  avoid?: string[];
+  successSignals?: string[];
+  notes?: string | null;
+};
+
 export type ExternalTargetConfig = {
   id: string;
   label: string;
   description: string;
   casesPath: string;
+  directionBrief?: ExternalDirectionBrief;
   execution: {
     basePrompt: string;
     resumePrompt: string;
+    directionNote?: string | null;
     sandboxMode: string;
     model: string | null;
     defaultWriteScope: string[];

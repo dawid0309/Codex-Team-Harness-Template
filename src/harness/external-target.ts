@@ -11,6 +11,7 @@ import type {
   EvaluationEvidence,
   EvaluationResult,
   ExecutionResult,
+  ExternalDirectionBrief,
   ExternalPlannerContextPacket,
   ExternalPlannerDraftCase,
   ExternalPlannerPublishResult,
@@ -55,6 +56,38 @@ function normalizeMetadata(value: unknown) {
   return value && typeof value === "object" && !Array.isArray(value)
     ? { ...(value as Record<string, unknown>) }
     : {};
+}
+
+function defaultNextConsumer(config: ExternalTargetConfig) {
+  return `${sanitizeLabel(config.id || config.label)}-maintainer`;
+}
+
+function formatDirectionBrief(brief: ExternalDirectionBrief | undefined) {
+  if (!brief) {
+    return [];
+  }
+
+  const sections = [
+    brief.activeTrack ? `- Active track: ${brief.activeTrack}` : null,
+    brief.productGoal ? `- Product goal: ${brief.productGoal}` : null,
+    brief.userExperience ? `- Intended user experience: ${brief.userExperience}` : null,
+    brief.platformScope ? `- Platform scope: ${brief.platformScope}` : null,
+    brief.implementationPreference ? `- Implementation preference: ${brief.implementationPreference}` : null,
+    ...(brief.constraints ?? []).map((item) => `- Constraint: ${item}`),
+    ...(brief.avoid ?? []).map((item) => `- Avoid: ${item}`),
+    ...(brief.successSignals ?? []).map((item) => `- Success signal: ${item}`),
+    brief.notes ? `- Operator notes: ${brief.notes}` : null,
+  ].filter((item): item is string => Boolean(item));
+
+  if (sections.length === 0) {
+    return [];
+  }
+
+  return [
+    "Structured direction brief:",
+    ...sections,
+    "",
+  ];
 }
 
 function extractJsonArray(text: string) {
@@ -178,10 +211,19 @@ async function markCaseStatus(
 }
 
 function promptForContract(config: ExternalTargetConfig, contract: SprintContract, resume: boolean) {
+  const directionNote = config.execution.directionNote?.trim();
   const base = resume ? config.execution.resumePrompt : config.execution.basePrompt;
   return [
     base,
     "",
+    ...formatDirectionBrief(config.directionBrief),
+    ...(directionNote
+      ? [
+          "Current operator direction:",
+          directionNote,
+          "",
+        ]
+      : []),
     "You are operating inside a generic development harness.",
     `Target: ${config.label}`,
     `Sprint contract id: ${contract.id}`,
@@ -420,6 +462,48 @@ function nextCaseNumber(cases: ExternalTargetCase[]) {
   }, 0) + 1;
 }
 
+function normalizeCaseFingerprintValue(value: string) {
+  return value
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
+}
+
+function caseFingerprintKeys(title: string, goal: string) {
+  const normalizedTitle = normalizeCaseFingerprintValue(title);
+  const normalizedGoal = normalizeCaseFingerprintValue(goal);
+  return [
+    normalizedTitle,
+    normalizedGoal,
+    `${normalizedTitle}::${normalizedGoal}`,
+  ].filter((item) => item.length > 0);
+}
+
+function filterPlannerDrafts(drafts: ExternalPlannerDraftCase[], cases: ExternalTargetCase[]) {
+  const seen = new Set<string>();
+
+  for (const item of cases) {
+    for (const key of caseFingerprintKeys(item.title, item.goal)) {
+      seen.add(key);
+    }
+  }
+
+  const filtered: ExternalPlannerDraftCase[] = [];
+  for (const draft of drafts) {
+    const keys = caseFingerprintKeys(draft.title, draft.goal);
+    if (keys.some((key) => seen.has(key))) {
+      continue;
+    }
+
+    filtered.push(draft);
+    for (const key of keys) {
+      seen.add(key);
+    }
+  }
+
+  return filtered;
+}
+
 async function buildPlannerContext(
   context: HarnessContext,
   config: ExternalTargetConfig,
@@ -479,16 +563,26 @@ function plannerPaths(context: HarnessContext) {
 
 function buildPlannerPrompt(config: ExternalTargetConfig) {
   const batchSize = config.planning?.batchSize ?? 3;
+  const directionNote = config.planning?.directionNote?.trim();
   return [
     config.planning?.basePrompt ?? `Plan the next development cases for ${config.label}.`,
     "",
+    ...formatDirectionBrief(config.directionBrief),
+    ...(directionNote
+      ? [
+          "Current operator direction for this target:",
+          directionNote,
+          "",
+        ]
+      : []),
     "You are operating as an external harness planner.",
     "Read the file `context.json` in the current working directory before deciding anything.",
     `Generate exactly up to ${batchSize} next cases for the target repository.`,
     "",
     "Rules:",
     "- Propose only the next most valuable product work after the currently verified work.",
-    "- Do not repeat any verified or existing backlog item.",
+    "- Do not repeat any existing case, including verified, backlog, ready, in-progress, blocked, review, done, or parked history.",
+    "- Assume the harness will stamp each published case with the current active track; keep the proposed work aligned with that direction.",
     "- Keep each case implementable in one coherent harness cycle.",
     "- Do not mention harness internals in the case content.",
     "- Do not assign ids or statuses.",
@@ -563,6 +657,7 @@ function createGeneratedCases(
     status: index === 0
       ? config.planning?.firstGeneratedStatus ?? "ready"
       : config.planning?.remainingGeneratedStatus ?? "backlog",
+    track: config.directionBrief?.activeTrack ?? null,
     goal: draft.goal,
     instructions: draft.instructions && draft.instructions.length > 0
       ? draft.instructions
@@ -573,7 +668,7 @@ function createGeneratedCases(
       : config.execution.defaultWriteScope,
     acceptanceChecks: draft.acceptanceChecks ?? [],
     expectedArtifacts: draft.expectedArtifacts ?? [],
-    nextConsumer: draft.nextConsumer ?? "poword-maintainer",
+    nextConsumer: draft.nextConsumer ?? defaultNextConsumer(config),
     metadata: {
       ...draft.metadata,
       generatedByPlanner: true,
@@ -630,8 +725,9 @@ async function runPlannerReplenishment(
     .map((item) => normalizePlannerDraftCase(item, config))
     .filter((item): item is ExternalPlannerDraftCase => !!item)
     .slice(0, config.planning.batchSize);
+  const dedupedDrafts = filterPlannerDrafts(normalizedDrafts, cases).slice(0, config.planning.batchSize);
 
-  const generatedCases = createGeneratedCases(normalizedDrafts, cases, config, context.runSpec.runId);
+  const generatedCases = createGeneratedCases(dedupedDrafts, cases, config, context.runSpec.runId);
   await context.artifactStore.writeJson("planner/generated-cases.json", generatedCases);
 
   const casesPath = casesPathForConfig(context, config);
