@@ -28,8 +28,12 @@ import {
 import type {
   ExternalCaseStatus,
   ExternalDirectionBrief,
+  ExternalPlanningEvaluation,
+  ExternalPlanningConfig,
   ExternalTargetCase,
   ExternalTargetConfig,
+  ExternalTargetMilestone,
+  ExternalTargetStrategy,
   HarnessPlanView,
   HarnessRunBoard,
   HarnessRunEvent,
@@ -48,6 +52,9 @@ type DashboardActionBody = {
   task?: string;
   model?: string;
   planningDirectionNote?: string | null;
+  strategyDirectionNote?: string | null;
+  milestoneDirectionNote?: string | null;
+  caseDirectionNote?: string | null;
   executionDirectionNote?: string | null;
   directionBrief?: {
     activeTrack?: string | null;
@@ -212,21 +219,154 @@ function normalizeDirectionBrief(
   };
 }
 
+type NormalizedDashboardPlanningConfig = {
+  enabled: boolean;
+  strategyPath: string;
+  milestonesPath: string;
+  strategy: {
+    agentId: string;
+    label: string;
+    basePrompt: string;
+    directionNote: string | null;
+    model: string | null;
+    maxRecentHandoffs: number;
+    refreshAfterVerifiedCases: number | null;
+  };
+  milestones: {
+    agentId: string;
+    label: string;
+    basePrompt: string;
+    directionNote: string | null;
+    model: string | null;
+    batchSize: number;
+  };
+  cases: {
+    agentId: string;
+    label: string;
+    basePrompt: string;
+    directionNote: string | null;
+    model: string | null;
+    batchSize: number;
+    maxRecentHandoffs: number;
+    firstGeneratedStatus: "ready";
+    remainingGeneratedStatus: "backlog";
+  };
+  strategyEvaluator: {
+    agentId: string;
+    label: string;
+    basePrompt: string;
+    directionNote: string | null;
+    model: string | null;
+  };
+  milestoneEvaluator: {
+    agentId: string;
+    label: string;
+    basePrompt: string;
+    directionNote: string | null;
+    model: string | null;
+  };
+};
+
+function normalizePlanningConfig(config: ExternalTargetConfig): NormalizedDashboardPlanningConfig {
+  const planning = config.planning;
+  const defaultBasePrompt = `Plan the next development cases for ${config.label}.`;
+  const defaultDirectionNote = trimNullable(planning?.directionNote);
+  const defaultModel = planning?.model ?? null;
+  const defaultBatchSize = planning?.batchSize ?? 3;
+  const defaultRecentHandoffs = planning?.maxRecentHandoffs ?? 5;
+  return {
+    enabled: planning?.enabled ?? false,
+    strategyPath: planning?.strategyPath ?? "strategy.json",
+    milestonesPath: planning?.milestonesPath ?? "milestones.json",
+    strategy: {
+      agentId: planning?.strategy?.agentId ?? "strategy-planner",
+      label: planning?.strategy?.label ?? "Strategy Planner",
+      basePrompt: planning?.strategy?.basePrompt
+        ?? `Synthesize the long-term development strategy for ${config.label} from repository truth.`,
+      directionNote: trimNullable(planning?.strategy?.directionNote) ?? defaultDirectionNote,
+      model: planning?.strategy?.model ?? defaultModel,
+      maxRecentHandoffs: planning?.strategy?.maxRecentHandoffs ?? Math.max(defaultRecentHandoffs, 8),
+      refreshAfterVerifiedCases: planning?.strategy?.refreshAfterVerifiedCases ?? 5,
+    },
+    milestones: {
+      agentId: planning?.milestones?.agentId ?? "milestone-planner",
+      label: planning?.milestones?.label ?? "Milestone Planner",
+      basePrompt: planning?.milestones?.basePrompt
+        ?? `Plan the next milestone batch for ${config.label} from the current strategy and repository truth.`,
+      directionNote: trimNullable(planning?.milestones?.directionNote) ?? defaultDirectionNote,
+      model: planning?.milestones?.model ?? defaultModel,
+      batchSize: planning?.milestones?.batchSize ?? defaultBatchSize,
+    },
+    cases: {
+      agentId: planning?.cases?.agentId ?? "case-planner",
+      label: planning?.cases?.label ?? "Case Planner",
+      basePrompt: planning?.cases?.basePrompt ?? planning?.basePrompt ?? defaultBasePrompt,
+      directionNote: trimNullable(planning?.cases?.directionNote) ?? defaultDirectionNote,
+      model: planning?.cases?.model ?? defaultModel,
+      batchSize: planning?.cases?.batchSize ?? defaultBatchSize,
+      maxRecentHandoffs: planning?.cases?.maxRecentHandoffs ?? defaultRecentHandoffs,
+      firstGeneratedStatus: planning?.cases?.firstGeneratedStatus ?? planning?.firstGeneratedStatus ?? "ready",
+      remainingGeneratedStatus: planning?.cases?.remainingGeneratedStatus ?? planning?.remainingGeneratedStatus ?? "backlog",
+    },
+    strategyEvaluator: {
+      agentId: planning?.strategyEvaluator?.agentId ?? "strategy-evaluator",
+      label: planning?.strategyEvaluator?.label ?? "Strategy Evaluator",
+      basePrompt: planning?.strategyEvaluator?.basePrompt
+        ?? `Evaluate whether the current ${config.label} strategy should remain active, complete, become superseded, or be marked blocked.`,
+      directionNote: trimNullable(planning?.strategyEvaluator?.directionNote) ?? defaultDirectionNote,
+      model: planning?.strategyEvaluator?.model ?? defaultModel,
+    },
+    milestoneEvaluator: {
+      agentId: planning?.milestoneEvaluator?.agentId ?? "milestone-evaluator",
+      label: planning?.milestoneEvaluator?.label ?? "Milestone Evaluator",
+      basePrompt: planning?.milestoneEvaluator?.basePrompt
+        ?? `Evaluate whether the active ${config.label} milestone should remain active, complete, or be marked blocked.`,
+      directionNote: trimNullable(planning?.milestoneEvaluator?.directionNote) ?? defaultDirectionNote,
+      model: planning?.milestoneEvaluator?.model ?? defaultModel,
+    },
+  };
+}
+
+function strategyPathForConfig(configPath: string, config: ExternalTargetConfig, planning: NormalizedDashboardPlanningConfig) {
+  return resolveConfigRelativePath(configPath, planning.strategyPath);
+}
+
+function milestonesPathForConfig(configPath: string, config: ExternalTargetConfig, planning: NormalizedDashboardPlanningConfig) {
+  return resolveConfigRelativePath(configPath, planning.milestonesPath);
+}
+
 async function resolveTargetFiles(options: DashboardServerOptions, targetId: string) {
   const registry = await loadTargetRegistry(options.controlRepoRoot, options.targetRegistryPath);
   const target = resolveTargetRegistration(options.controlRepoRoot, registry, targetId);
   const configPath = target.adapterConfigPath;
   const config = JSON.parse(await readFile(configPath, "utf8")) as ExternalTargetConfig;
+  const planning = normalizePlanningConfig(config);
   const casesPath = resolveConfigRelativePath(configPath, config.casesPath);
   const cases = existsSync(casesPath)
     ? (JSON.parse(await readFile(casesPath, "utf8")) as ExternalTargetCase[])
     : [];
+  const strategyPath = strategyPathForConfig(configPath, config, planning);
+  const milestonesPath = milestonesPathForConfig(configPath, config, planning);
+  const targetArtifactRoot = path.join(options.controlRepoRoot, target.artifactRoot);
+  const [strategy, milestones, strategyEvaluation, milestoneEvaluations] = await Promise.all([
+    readJsonIfExists<ExternalTargetStrategy>(strategyPath),
+    readJsonIfExists<ExternalTargetMilestone[]>(milestonesPath),
+    readJsonIfExists<ExternalPlanningEvaluation>(path.join(targetArtifactRoot, "strategy-evaluation.json")),
+    readJsonIfExists<Record<string, ExternalPlanningEvaluation>>(path.join(targetArtifactRoot, "milestone-evaluations.json")),
+  ]);
   return {
     target,
     configPath,
     config,
+    planning,
     casesPath,
     cases,
+    strategyPath,
+    strategy,
+    milestonesPath,
+    milestones: milestones ?? [],
+    strategyEvaluation,
+    milestoneEvaluations: milestoneEvaluations ?? {},
   };
 }
 
@@ -395,23 +535,60 @@ function rebalanceCasesForTrack(
 }
 
 async function readDirectionData(options: DashboardServerOptions, targetId: string) {
-  const { config, cases, casesPath, configPath } = await resolveTargetFiles(options, targetId);
+  const {
+    config,
+    planning,
+    cases,
+    casesPath,
+    configPath,
+    strategyPath,
+    strategy,
+    milestonesPath,
+    milestones,
+    strategyEvaluation,
+    milestoneEvaluations,
+  } = await resolveTargetFiles(options, targetId);
   const normalizedCases = cases.map((item) => ({
     ...item,
     track: item.track ?? null,
+    strategyId: item.strategyId ?? (typeof item.metadata?.strategyId === "string" ? item.metadata.strategyId : null),
+    milestoneId: item.milestoneId ?? (typeof item.metadata?.milestoneId === "string" ? item.metadata.milestoneId : null),
   }));
   const activeTrack = config.directionBrief?.activeTrack ?? null;
+  const activeStrategy = strategy && strategy.status === "active" && strategy.track === activeTrack ? strategy : null;
+  const activeMilestone = milestones.find((item) => (
+    item.status === "active"
+    && item.track === activeTrack
+    && (!activeStrategy || item.strategyId === activeStrategy.id)
+  )) ?? null;
   return {
     targetId,
     configPath: path.relative(options.controlRepoRoot, configPath).replaceAll("\\", "/"),
     casesPath: path.relative(options.controlRepoRoot, casesPath).replaceAll("\\", "/"),
+    strategyPath: path.relative(options.controlRepoRoot, strategyPath).replaceAll("\\", "/"),
+    milestonesPath: path.relative(options.controlRepoRoot, milestonesPath).replaceAll("\\", "/"),
     direction: {
-      planningBasePrompt: config.planning?.basePrompt ?? "",
-      planningDirectionNote: config.planning?.directionNote ?? "",
+      planningBasePrompt: planning.cases.basePrompt,
+      planningDirectionNote: planning.cases.directionNote ?? "",
+      strategyPlannerLabel: planning.strategy.label,
+      strategyPlannerDirectionNote: planning.strategy.directionNote ?? "",
+      strategyPlannerBasePrompt: planning.strategy.basePrompt,
+      milestonePlannerLabel: planning.milestones.label,
+      milestonePlannerDirectionNote: planning.milestones.directionNote ?? "",
+      milestonePlannerBasePrompt: planning.milestones.basePrompt,
+      strategyEvaluatorLabel: planning.strategyEvaluator.label,
+      strategyEvaluatorDirectionNote: planning.strategyEvaluator.directionNote ?? "",
+      strategyEvaluatorBasePrompt: planning.strategyEvaluator.basePrompt,
+      milestoneEvaluatorLabel: planning.milestoneEvaluator.label,
+      milestoneEvaluatorDirectionNote: planning.milestoneEvaluator.directionNote ?? "",
+      milestoneEvaluatorBasePrompt: planning.milestoneEvaluator.basePrompt,
+      casePlannerLabel: planning.cases.label,
+      casePlannerDirectionNote: planning.cases.directionNote ?? "",
+      casePlannerBasePrompt: planning.cases.basePrompt,
       executionBasePrompt: config.execution.basePrompt ?? "",
       executionDirectionNote: config.execution.directionNote ?? "",
-      planningEnabled: config.planning?.enabled ?? false,
-      batchSize: config.planning?.batchSize ?? null,
+      planningEnabled: planning.enabled,
+      batchSize: planning.cases.batchSize,
       brief: {
         activeTrack,
         productGoal: config.directionBrief?.productGoal ?? "",
@@ -424,6 +601,11 @@ async function readDirectionData(options: DashboardServerOptions, targetId: stri
         notes: config.directionBrief?.notes ?? "",
       },
     },
+    strategy,
+    strategyEvaluation,
+    milestones,
+    milestoneEvaluations,
+    activeMilestoneId: activeMilestone?.id ?? null,
     queueCounts: buildQueueCounts(normalizedCases, activeTrack),
     tracks: collectKnownTracks(normalizedCases, activeTrack),
     cases: normalizedCases,
@@ -431,24 +613,74 @@ async function readDirectionData(options: DashboardServerOptions, targetId: stri
 }
 
 async function updateDirectionData(options: DashboardServerOptions, targetId: string, body: DashboardActionBody) {
-  const { config, configPath, cases, casesPath } = await resolveTargetFiles(options, targetId);
+  const { config, planning, configPath, cases, casesPath } = await resolveTargetFiles(options, targetId);
   let mutated = false;
   let createdCaseId: string | null = null;
 
   if ("planningDirectionNote" in body) {
-    if (!config.planning) {
-      config.planning = {
-        enabled: true,
-        batchSize: 3,
-        basePrompt: `Plan the next development cases for ${config.label}.`,
-        directionNote: null,
-        model: null,
-        maxRecentHandoffs: 5,
-        firstGeneratedStatus: "ready",
-        remainingGeneratedStatus: "backlog",
-      };
-    }
-    config.planning.directionNote = trimNullable(body.planningDirectionNote);
+    config.planning ??= {} as ExternalPlanningConfig;
+    config.planning.enabled = planning.enabled || true;
+    config.planning.cases ??= {
+      agentId: planning.cases.agentId,
+      label: planning.cases.label,
+      basePrompt: planning.cases.basePrompt,
+      directionNote: planning.cases.directionNote,
+      model: planning.cases.model,
+      batchSize: planning.cases.batchSize,
+      maxRecentHandoffs: planning.cases.maxRecentHandoffs,
+      firstGeneratedStatus: planning.cases.firstGeneratedStatus,
+      remainingGeneratedStatus: planning.cases.remainingGeneratedStatus,
+    };
+    config.planning.cases.directionNote = trimNullable(body.planningDirectionNote);
+    mutated = true;
+  }
+
+  if ("strategyDirectionNote" in body) {
+    config.planning ??= {} as ExternalPlanningConfig;
+    config.planning.enabled = planning.enabled || true;
+    config.planning.strategy ??= {
+      agentId: planning.strategy.agentId,
+      label: planning.strategy.label,
+      basePrompt: planning.strategy.basePrompt,
+      directionNote: planning.strategy.directionNote,
+      model: planning.strategy.model,
+      maxRecentHandoffs: planning.strategy.maxRecentHandoffs,
+      refreshAfterVerifiedCases: planning.strategy.refreshAfterVerifiedCases,
+    };
+    config.planning.strategy.directionNote = trimNullable(body.strategyDirectionNote);
+    mutated = true;
+  }
+
+  if ("milestoneDirectionNote" in body) {
+    config.planning ??= {} as ExternalPlanningConfig;
+    config.planning.enabled = planning.enabled || true;
+    config.planning.milestones ??= {
+      agentId: planning.milestones.agentId,
+      label: planning.milestones.label,
+      basePrompt: planning.milestones.basePrompt,
+      directionNote: planning.milestones.directionNote,
+      model: planning.milestones.model,
+      batchSize: planning.milestones.batchSize,
+    };
+    config.planning.milestones.directionNote = trimNullable(body.milestoneDirectionNote);
+    mutated = true;
+  }
+
+  if ("caseDirectionNote" in body) {
+    config.planning ??= {} as ExternalPlanningConfig;
+    config.planning.enabled = planning.enabled || true;
+    config.planning.cases ??= {
+      agentId: planning.cases.agentId,
+      label: planning.cases.label,
+      basePrompt: planning.cases.basePrompt,
+      directionNote: planning.cases.directionNote,
+      model: planning.cases.model,
+      batchSize: planning.cases.batchSize,
+      maxRecentHandoffs: planning.cases.maxRecentHandoffs,
+      firstGeneratedStatus: planning.cases.firstGeneratedStatus,
+      remainingGeneratedStatus: planning.cases.remainingGeneratedStatus,
+    };
+    config.planning.cases.directionNote = trimNullable(body.caseDirectionNote);
     mutated = true;
   }
 
@@ -887,9 +1119,17 @@ async function readRunArtifacts(options: DashboardServerOptions, targetId: strin
     handoff,
     handoffResume,
     plannerContext,
+    plannerContextBudget,
     plannerGeneratedCases,
     plannerPublishResult,
     plannerOutputRaw,
+    plannerStrategy,
+    plannerStrategyPublishResult,
+    plannerStrategyOutputRaw,
+    plannerMilestones,
+    plannerMilestonesPublishResult,
+    plannerMilestonesOutputRaw,
+    executionReconciled,
   ] = await Promise.all([
     readJsonIfExists<Record<string, unknown>>(path.join(runDir, "contract.json")),
     readJsonIfExists<Record<string, unknown>>(path.join(runDir, "execution.json")),
@@ -901,9 +1141,17 @@ async function readRunArtifacts(options: DashboardServerOptions, targetId: strin
     readTextIfExists(path.join(runDir, "handoff.md")),
     readTextIfExists(path.join(runDir, "handoff.resume.md")),
     readJsonIfExists<Record<string, unknown>>(path.join(runDir, "planner", "context.json")),
+    readJsonIfExists<Record<string, unknown>>(path.join(runDir, "planner", "context-budget.json")),
     readJsonIfExists<Record<string, unknown>>(path.join(runDir, "planner", "generated-cases.json")),
     readJsonIfExists<Record<string, unknown>>(path.join(runDir, "planner", "publish-result.json")),
     readTextIfExists(path.join(runDir, "planner", "output.raw.txt")),
+    readJsonIfExists<Record<string, unknown>>(path.join(runDir, "planner", "strategy", "generated-strategy.json")),
+    readJsonIfExists<Record<string, unknown>>(path.join(runDir, "planner", "strategy", "publish-result.json")),
+    readTextIfExists(path.join(runDir, "planner", "strategy", "output.raw.txt")),
+    readJsonIfExists<Record<string, unknown>>(path.join(runDir, "planner", "milestones", "generated-milestones.json")),
+    readJsonIfExists<Record<string, unknown>>(path.join(runDir, "planner", "milestones", "publish-result.json")),
+    readTextIfExists(path.join(runDir, "planner", "milestones", "output.raw.txt")),
+    readJsonIfExists<Record<string, unknown>>(path.join(runDir, "execution.reconciled.json")),
   ]);
   return {
     runId,
@@ -922,10 +1170,18 @@ async function readRunArtifacts(options: DashboardServerOptions, targetId: strin
     handoffResume,
     planner: {
       context: plannerContext,
+      contextBudget: plannerContextBudget,
       generatedCases: plannerGeneratedCases,
       publishResult: plannerPublishResult,
       outputRaw: plannerOutputRaw,
+      strategy: plannerStrategy,
+      strategyPublishResult: plannerStrategyPublishResult,
+      strategyOutputRaw: plannerStrategyOutputRaw,
+      milestones: plannerMilestones,
+      milestonesPublishResult: plannerMilestonesPublishResult,
+      milestonesOutputRaw: plannerMilestonesOutputRaw,
     },
+    executionReconciled,
   };
 }
 
@@ -1016,6 +1272,9 @@ async function readTargetStatus(options: DashboardServerOptions, targetId: strin
       stdoutTail: await tailFile(stdoutLogPath),
       stderrTail: await tailFile(stderrLogPath),
     },
+    latestEvaluation: currentRun?.evaluation ?? null,
+    executionReconciled: currentRun?.executionReconciled ?? null,
+    plannerContextBudget: currentRun?.planner?.contextBudget ?? null,
     currentRun,
   };
 }
@@ -1657,7 +1916,7 @@ function htmlPage(port: number) {
           <div class="direction-layout">
             <div class="direction-stack">
               <div class="direction-box">
-                <h4>Direction Brief</h4>
+                <h4>Strategy</h4>
                 <p class="direction-caption">Set the real product direction here. This brief feeds future planning and execution prompts, while keeping all harness state in Foundry.</p>
                 <div class="brief-grid">
                   <div>
@@ -1704,12 +1963,22 @@ function htmlPage(port: number) {
               </div>
 
               <div class="direction-box">
-                <h4>Prompt Notes</h4>
-                <label for="planningDirectionInput">Planner direction note</label>
-                <textarea id="planningDirectionInput" placeholder="Tell the planner what direction to bias toward next."></textarea>
+                <h4>Planner Notes</h4>
+                <label for="strategyDirectionInput">Strategy planner note</label>
+                <textarea id="strategyDirectionInput" placeholder="Tell the strategy planner how to steer the long-term direction."></textarea>
+                <label for="milestoneDirectionInput">Milestone planner note</label>
+                <textarea id="milestoneDirectionInput" placeholder="Tell the milestone planner how to slice the next phases."></textarea>
+                <label for="planningDirectionInput">Case planner note</label>
+                <textarea id="planningDirectionInput" placeholder="Tell the case planner what to bias toward next."></textarea>
                 <label for="executionDirectionInput">Executor direction note</label>
                 <textarea id="executionDirectionInput" placeholder="Tell the executor how to approach the next implementation cycle."></textarea>
-                <p class="direction-note" style="margin-top: 12px;">Use these for short, tactical steering. Use the brief above for durable product direction and implementation bias.</p>
+                <p class="direction-note" style="margin-top: 12px;">Use these for short, tactical steering per planning layer. Use the strategy brief above for durable product direction and implementation bias.</p>
+              </div>
+
+              <div class="direction-box">
+                <h4>Planning Layers</h4>
+                <div id="directionStrategySummary" class="direction-meta" style="white-space: normal;">No strategy generated yet.</div>
+                <div id="directionMilestoneList" class="direction-case-list" style="margin-top: 12px;"></div>
               </div>
 
               <div class="direction-box">
@@ -1822,6 +2091,8 @@ function htmlPage(port: number) {
               <dt>Active Task</dt><dd id="activeTask">n/a</dd>
               <dt>Subagents</dt><dd id="activeSubagents">0</dd>
               <dt>Thread</dt><dd id="threadId">n/a</dd>
+              <dt>Eval Class</dt><dd id="evaluationClass">n/a</dd>
+              <dt>Retry</dt><dd id="evaluationRetryable">n/a</dd>
               <dt>Checkpoint</dt><dd id="checkpointPath">n/a</dd>
               <dt>Stdout</dt><dd id="stdoutPath">n/a</dd>
               <dt>Stderr</dt><dd id="stderrPath">n/a</dd>
@@ -1835,6 +2106,8 @@ function htmlPage(port: number) {
               <dt>Started</dt><dd id="startedAt">n/a</dd>
               <dt>Updated</dt><dd id="updatedAt">n/a</dd>
               <dt>Failure</dt><dd id="failureReason">n/a</dd>
+              <dt>Reconciled</dt><dd id="executionReconciled">n/a</dd>
+              <dt>Context Budget</dt><dd id="contextBudget">n/a</dd>
               <dt>Artifact Root</dt><dd id="artifactRoot">n/a</dd>
             </dl>
           </div>
@@ -1913,8 +2186,12 @@ function htmlPage(port: number) {
     const briefAvoidInput = document.getElementById("briefAvoidInput");
     const briefSuccessSignalsInput = document.getElementById("briefSuccessSignalsInput");
     const briefNotesInput = document.getElementById("briefNotesInput");
+    const strategyDirectionInput = document.getElementById("strategyDirectionInput");
+    const milestoneDirectionInput = document.getElementById("milestoneDirectionInput");
     const planningDirectionInput = document.getElementById("planningDirectionInput");
     const executionDirectionInput = document.getElementById("executionDirectionInput");
+    const directionStrategySummary = document.getElementById("directionStrategySummary");
+    const directionMilestoneList = document.getElementById("directionMilestoneList");
     const directionCaseList = document.getElementById("directionCaseList");
     const directionQueueSummary = document.getElementById("directionQueueSummary");
     const directionTrackFilterInput = document.getElementById("directionTrackFilterInput");
@@ -2137,10 +2414,41 @@ function htmlPage(port: number) {
       briefAvoidInput.value = Array.isArray(brief.avoid) ? brief.avoid.join("\n") : "";
       briefSuccessSignalsInput.value = Array.isArray(brief.successSignals) ? brief.successSignals.join("\n") : "";
       briefNotesInput.value = brief.notes || "";
+      strategyDirectionInput.value = state.direction?.direction?.strategyPlannerDirectionNote || "";
+      milestoneDirectionInput.value = state.direction?.direction?.milestonePlannerDirectionNote || "";
       planningDirectionInput.value = state.direction?.direction?.planningDirectionNote || "";
       executionDirectionInput.value = state.direction?.direction?.executionDirectionNote || "";
       newCaseTrackInput.value = newCaseTrackInput.value || brief.activeTrack || "";
       ensureTrackFilterOptions(directionCases());
+
+      const strategy = state.direction?.strategy || null;
+      const strategyEvaluation = state.direction?.strategyEvaluation || null;
+      const milestones = Array.isArray(state.direction?.milestones) ? state.direction.milestones : [];
+      const milestoneEvaluations = state.direction?.milestoneEvaluations || {};
+      const activeMilestoneId = state.direction?.activeMilestoneId || null;
+      directionStrategySummary.innerHTML = strategy
+        ? [
+            '<div><strong>' + escapeHtml(strategy.title || "Untitled strategy") + '</strong></div>',
+            '<div style="margin-top:6px;">track: ' + escapeHtml(strategy.track || "untracked") + ' | status: ' + escapeHtml(strategy.status || "active") + ' | revision: ' + escapeHtml(strategy.revision || "n/a") + ' | agent: ' + escapeHtml(strategy.agentLabel || strategy.agentId || "strategy-planner") + '</div>',
+            '<div style="margin-top:8px;">' + escapeHtml(strategy.summary || "No summary recorded.") + '</div>',
+            strategy.horizonGoal ? '<div style="margin-top:8px;"><strong>Horizon:</strong> ' + escapeHtml(strategy.horizonGoal) + '</div>' : "",
+            strategyEvaluation ? '<div style="margin-top:8px;"><strong>Latest evaluator:</strong> ' + escapeHtml((strategyEvaluation.decision || "active") + " | " + (strategyEvaluation.summary || "No summary recorded.")) + '</div>' : "",
+            strategyEvaluation && strategyEvaluation.recommendedNextAction ? '<div style="margin-top:6px;"><strong>Next action:</strong> ' + escapeHtml(strategyEvaluation.recommendedNextAction) + '</div>' : "",
+          ].filter(Boolean).join("")
+        : "No strategy generated yet.";
+      directionMilestoneList.innerHTML = milestones.length > 0
+        ? milestones.map((item) => {
+            const isActive = activeMilestoneId === item.id;
+            const milestoneEvaluation = milestoneEvaluations[item.id] || null;
+            return '<div class="direction-case' + (isActive ? ' active' : '') + '" style="margin-bottom:10px; cursor:default;">'
+              + '<div class="direction-case-top"><div class="direction-case-id">' + escapeHtml(item.id) + '</div><span class="' + pillClass(item.status) + '">' + escapeHtml(item.status) + '</span></div>'
+              + '<div class="direction-case-title">' + escapeHtml(item.title) + '</div>'
+              + '<div class="direction-case-goal">' + escapeHtml(item.goal || "No goal recorded.") + '</div>'
+              + '<div class="direction-meta" style="margin-top:8px;">Track: ' + escapeHtml(item.track || "untracked") + ' | Agent: ' + escapeHtml(item.agentLabel || item.agentId || "milestone-planner") + '</div>'
+              + (milestoneEvaluation ? '<div class="direction-meta" style="margin-top:8px;">Evaluator: ' + escapeHtml((milestoneEvaluation.decision || "active") + " | " + (milestoneEvaluation.summary || "No summary recorded.")) + '</div>' : "")
+              + '</div>';
+          }).join("")
+        : '<div class="muted">No milestones generated yet.</div>';
 
       const queueCounts = state.direction?.queueCounts || null;
       directionQueueSummary.textContent = queueCounts
@@ -2151,6 +2459,7 @@ function htmlPage(port: number) {
             "verified: " + String(queueCounts.verified || 0),
             "done: " + String(queueCounts.done || 0),
             brief.activeTrack ? "active track: " + brief.activeTrack : null,
+            activeMilestoneId ? "active milestone: " + activeMilestoneId : null,
           ].filter(Boolean).join(" | ")
         : "No queue data yet.";
 
@@ -2180,7 +2489,7 @@ function htmlPage(port: number) {
           '<div class="direction-case-top"><div class="direction-case-id">' + escapeHtml(item.id) + '</div><span class="' + pillClass(item.status) + '">' + escapeHtml(item.status) + '</span></div>' +
           '<div class="direction-case-title">' + escapeHtml(item.title) + '</div>' +
           '<div class="direction-case-goal">' + escapeHtml(item.goal || "No goal recorded.") + '</div>' +
-          '<div class="direction-meta" style="margin-top:8px;">Track: ' + escapeHtml(item.track || "untracked") + ' | Instructions: ' + String(instructionCount) + '</div>';
+          '<div class="direction-meta" style="margin-top:8px;">Track: ' + escapeHtml(item.track || "untracked") + ' | Strategy: ' + escapeHtml(item.strategyId || "none") + ' | Milestone: ' + escapeHtml(item.milestoneId || "none") + ' | Instructions: ' + String(instructionCount) + '</div>';
         card.addEventListener("click", () => {
           state.selectedDirectionCaseId = item.id;
           renderDirectionEditor();
@@ -2192,7 +2501,7 @@ function htmlPage(port: number) {
       if (!selected) {
         return;
       }
-      selectedCaseIdLabel.textContent = selected.id + " | " + selected.status + " | track: " + (selected.track || "untracked");
+      selectedCaseIdLabel.textContent = selected.id + " | " + selected.status + " | track: " + (selected.track || "untracked") + " | milestone: " + (selected.milestoneId || "none");
       caseEditorTitleInput.value = selected.title || "";
       caseEditorStatusInput.value = selected.status || "backlog";
       caseEditorTrackInput.value = selected.track || "";
@@ -2236,6 +2545,10 @@ function htmlPage(port: number) {
       document.getElementById("activeTask").textContent = payload.status.activeTask ? payload.status.activeTask.title : (worker.activeTaskTitle || worker.activeTaskId || "n/a");
       document.getElementById("activeSubagents").textContent = String(payload.status.activeSubagentCount || 0);
       document.getElementById("threadId").textContent = worker.threadId || "n/a";
+      document.getElementById("evaluationClass").textContent = payload.status.latestEvaluation?.failureClass || "n/a";
+      document.getElementById("evaluationRetryable").textContent = payload.status.latestEvaluation
+        ? String(Boolean(payload.status.latestEvaluation.retryable))
+        : "n/a";
       document.getElementById("checkpointPath").textContent = worker.latestCheckpoint || "n/a";
       document.getElementById("stdoutPath").textContent = payload.status.logs.stdoutPath || "n/a";
       document.getElementById("stderrPath").textContent = payload.status.logs.stderrPath || "n/a";
@@ -2244,6 +2557,11 @@ function htmlPage(port: number) {
       document.getElementById("startedAt").textContent = live.startedAt || "n/a";
       document.getElementById("updatedAt").textContent = live.updatedAt || "n/a";
       document.getElementById("failureReason").textContent = live.failureReason || "n/a";
+      document.getElementById("executionReconciled").textContent = payload.status.executionReconciled ? "yes" : "no";
+      document.getElementById("contextBudget").textContent = payload.status.plannerContextBudget
+        ? ((payload.status.plannerContextBudget.totalIncludedBytes || 0) + " / " + (payload.status.plannerContextBudget.maxContextBytes || 0)
+            + (payload.status.plannerContextBudget.truncated ? " (trimmed)" : ""))
+        : "n/a";
       document.getElementById("artifactRoot").textContent = payload.status.artifactRoot || "n/a";
       document.getElementById("stdoutTail").textContent = payload.status.logs.stdoutTail || "";
       document.getElementById("stderrTail").textContent = payload.status.logs.stderrTail || "";
@@ -2255,6 +2573,7 @@ function htmlPage(port: number) {
         document.getElementById("runDetail").textContent = JSON.stringify({
           contract: payload.status.currentRun.contract,
           execution: payload.status.currentRun.execution,
+          executionReconciled: payload.status.currentRun.executionReconciled,
           evaluation: payload.status.currentRun.evaluation,
           checkpoint: payload.status.currentRun.checkpoint,
           planner: payload.status.currentRun.planner,
@@ -2598,6 +2917,9 @@ function htmlPage(port: number) {
           successSignalsText: briefSuccessSignalsInput.value,
           notes: briefNotesInput.value,
         },
+        strategyDirectionNote: strategyDirectionInput.value,
+        milestoneDirectionNote: milestoneDirectionInput.value,
+        caseDirectionNote: planningDirectionInput.value,
         planningDirectionNote: planningDirectionInput.value,
         executionDirectionNote: executionDirectionInput.value,
       }, "Saved direction brief and prompt notes.");

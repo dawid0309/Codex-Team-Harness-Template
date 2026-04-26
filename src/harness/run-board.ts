@@ -406,6 +406,16 @@ function updateNodeFromEvent(node: HarnessTaskNode | undefined, event: HarnessRu
   return next;
 }
 
+function shouldUseEventAsBoardSummary(event: HarnessRunEvent) {
+  return event.kind === "lifecycle" || event.kind === "agent_message" || event.kind === "error";
+}
+
+function isTerminalSubagentFailure(task: HarnessTaskNode) {
+  return task.lane === "subagents"
+    && task.status === "failed"
+    && (task.kind === "error" || task.id === "turn:current");
+}
+
 function finalizeBoard(board: HarnessRunBoard) {
   const taskMap = new Map(board.tasks.map((task) => [task.id, task]));
   for (const task of taskMap.values()) {
@@ -450,12 +460,15 @@ function finalizeBoard(board: HarnessRunBoard) {
     const runningTasks = laneTasks.filter((task) => task.status === "running");
     const failedTasks = laneTasks.filter((task) => task.status === "failed");
     const completedTasks = laneTasks.filter((task) => task.status === "completed");
-    const activeTask = runningTasks[0] ?? failedTasks[0] ?? laneTasks[0] ?? null;
+    const terminalFailedTasks = lane === "subagents"
+      ? failedTasks.filter((task) => isTerminalSubagentFailure(task))
+      : failedTasks;
+    const activeTask = runningTasks[0] ?? terminalFailedTasks[0] ?? failedTasks[0] ?? laneTasks[0] ?? null;
     let status: HarnessLaneBoard["status"] = "idle";
-    if (failedTasks.length > 0) {
-      status = "failed";
-    } else if (runningTasks.length > 0) {
+    if (runningTasks.length > 0) {
       status = "running";
+    } else if (terminalFailedTasks.length > 0) {
+      status = "failed";
     } else if (laneTasks.length > 0 && completedTasks.length === laneTasks.length) {
       status = "completed";
     } else if (laneTasks.length > 0) {
@@ -501,7 +514,9 @@ export function rebuildRunBoard(spec: HarnessRunSpec, events: HarnessRunEvent[])
 
   for (const event of events) {
     board.phase = event.phase;
-    board.latestSummary = event.summary ?? board.latestSummary;
+    if (event.summary && shouldUseEventAsBoardSummary(event)) {
+      board.latestSummary = event.summary;
+    }
     board.updatedAt = event.ts;
     const nodeId = event.itemId ?? event.id;
     const current = taskMap.get(nodeId);

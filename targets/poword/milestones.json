@@ -1,0 +1,224 @@
+[
+  {
+    "id": "POW-M001",
+    "strategyId": "POW-S001",
+    "title": "Complete the native selection-to-vocabulary loop",
+    "status": "completed",
+    "track": "rust-mainline",
+    "goal": "Finish the Windows-native Poword interaction so a text selection can surface a tiny action, show a compact translation preview, and turn into a visibly managed vocabulary item without forcing the user through the older Java-owned flow.",
+    "scope": [
+      "Finish the native popup path from selection detection to compact translation preview before any notebook write.",
+      "Complete exact save, already-saved, remove, favorite, note, and undo interactions on the native popup using Rust-owned receipts and word identity.",
+      "Handle short phrase fallback, alternate match choice, and preview state hints so the popup can explain what will be saved without expanding into a heavy UI.",
+      "Keep the popup and preview state coherent across immediate reselection, save, remove, favorite, note, and undo actions."
+    ],
+    "exitCriteria": [
+      "A user can select text in supported Windows apps, see a tiny Poword action, open a compact preview, and save the resolved word without re-running ambiguous dictionary work.",
+      "The popup can show whether the resolved word is already saved, let the user save or remove it, and expose favorite and note edits with reversible feedback.",
+      "Fallback or rewritten selections disclose the resolved word clearly enough that accepted saves are predictable.",
+      "The saved-word interaction stays inside the native popup path instead of dropping back to a larger Java-owned overlay surface."
+    ],
+    "successSignals": [
+      "Selected text anywhere in the supported Windows path triggers a tiny Poword affordance that feels immediate.",
+      "Translation preview is visible before notebook mutation and accepted words become highlighted vocabulary with minimal interruption.",
+      "Users can recover from mistaken save or remove actions without manual database cleanup.",
+      "The native popup is enough to complete the core selection, translation, highlight, and save loop."
+    ],
+    "casePlanningGuidance": [
+      "Start with preview identity, exact save, and post-save state, then layer undo and metadata edits on top of the same resolved-word contract.",
+      "Group popup behavior work by user-visible loop segments rather than by internal modules: preview, save, remove, favorite, note, undo.",
+      "Treat ambiguous phrase handling and reselected-preview coherence as part of the same interaction milestone, not as isolated polish.",
+      "Keep Java changes limited to short-term compatibility where the native Rust path still needs bridge parity."
+    ],
+    "agentId": "poword-milestone-planner",
+    "agentLabel": "Poword Milestone Planner",
+    "generatedAt": "2026-04-25T20:41:28.990Z",
+    "updatedAt": "2026-04-25T21:32:35.788Z",
+    "metadata": {
+      "focusArea": "windows-overlay-loop"
+    }
+  },
+  {
+    "id": "POW-M002",
+    "strategyId": "POW-S001",
+    "title": "Harden the always-on Windows overlay for daily desktop use",
+    "status": "completed",
+    "track": "rust-mainline",
+    "goal": "Turn the native overlay into a lightweight, trustworthy background utility that stays responsive and unobtrusive across normal Windows usage instead of behaving like a fragile prototype.",
+    "scope": [
+      "Stabilize selection detection, popup placement, and preview lifetime across passive selections, mouse-release gating, keyboard selection, scrolling, monitor changes, DPI changes, and brief geometry loss.",
+      "Reduce runtime cost with event-assisted wakeups, idle backoff, background worker isolation, preview caching rules, and bounded long-session state.",
+      "Make startup and session behavior reliable with companion readiness checks, single-instance protection, pause or tray controls, autostart support, and recovery from sleep, unlock, reconnect, or database path changes.",
+      "Add quieting and safety rules for password fields, full-screen apps, Poword-owned windows, unsupported surfaces, and repeated store-attach or notebook lock failures."
+    ],
+    "exitCriteria": [
+      "The overlay remains lightweight enough for always-on desktop use while still reacting quickly to real selection changes.",
+      "Popup placement stays stable and non-obstructive on common Windows text surfaces and does not thrash on small geometry jitter or transient selection gaps.",
+      "Only one overlay instance owns the global interaction path, and startup failures produce clear readiness diagnostics instead of silent malfunction.",
+      "The overlay suspends or quiets itself in contexts where Poword should not intrude, including protected fields and disruptive full-screen situations."
+    ],
+    "successSignals": [
+      "Poword feels like a small native utility instead of a heavy shell or debugging tool.",
+      "Users can leave the overlay running all day without noticeable focus stealing, duplicate popups, or runaway background work.",
+      "Selection-to-action latency stays low even after long sessions, monitor changes, or system resume.",
+      "Operator-visible failures are specific enough to fix without tracing through the Java compatibility layer."
+    ],
+    "casePlanningGuidance": [
+      "Batch cases by runtime seam: startup and readiness, selection capture and placement, background work and caching, lifecycle and recovery, quiet rules and safety.",
+      "Prefer changes that improve both perceived speed and idle cost before adding extra surface controls.",
+      "Use real Windows interaction scenarios as verification anchors: scaled display, scrolling text, app switch, sleep or resume, notebook lock, and database swap.",
+      "Do not widen scope into unrelated desktop shell features unless they directly support the always-on overlay path."
+    ],
+    "agentId": "poword-milestone-planner",
+    "agentLabel": "Poword Milestone Planner",
+    "generatedAt": "2026-04-25T20:41:28.990Z",
+    "updatedAt": "2026-04-25T22:21:00.219Z",
+    "metadata": {
+      "focusArea": "windows-overlay-runtime"
+    }
+  },
+  {
+    "id": "POW-M003",
+    "strategyId": "POW-S001",
+    "title": "Shift the desktop vocabulary trunk to Rust with Java as a compatibility bridge",
+    "status": "completed",
+    "track": "rust-mainline",
+    "goal": "Move Poword’s adjacent desktop and notebook capabilities onto a Rust-owned command and data surface so the product trunk no longer depends on Java business logic for its core vocabulary flow.",
+    "scope": [
+      "Finish the Rust-native desktop entrypoint and shared product-store or command boundaries needed to host the migrated desktop trunk cleanly.",
+      "Route Java query, detail, save, undo, notebook metadata, recent notebook, and review-word selection paths through typed Rust companion contracts with version and capability checks.",
+      "Remove Java-owned notebook and highlight writes once Rust-backed save, metadata, and undo paths have parity and refresh the Java-facing models from Rust results.",
+      "Add operator and smoke coverage so shipped Java bridge commands can prove they match the checked-in Rust companion surface."
+    ],
+    "exitCriteria": [
+      "Core desktop vocabulary operations run through Rust-owned command surfaces even when invoked from existing Java entry points.",
+      "Java acts as a thin compatibility layer with typed parsing, readiness checks, and error reporting instead of owning the notebook mutation logic.",
+      "Rust owns the save, undo, metadata, and review-selection contracts needed for the lightweight desktop experience.",
+      "The shipped desktop path has a supported Rust-native entrypoint and compatibility coverage that catches command drift before release."
+    ],
+    "successSignals": [
+      "Poword’s long-term desktop trunk is visibly centered on Rust rather than incremental Java expansion.",
+      "The Windows-native overlay and the compatibility desktop paths share the same Rust vocabulary behavior and notebook state model.",
+      "Review selection and other adjacent study actions move closer to the Rust product core without dragging the always-on surface into a heavier architecture.",
+      "Java remains temporary infrastructure instead of the long-term owner of desktop vocabulary features."
+    ],
+    "casePlanningGuidance": [
+      "Migrate one capability family at a time: save and undo, notebook metadata, recent notebook reads, review selection, then remaining typed bridge cleanup.",
+      "Keep bridge work focused on contract parity and ownership removal, not on broad Java feature growth.",
+      "Use typed result parsing, version gates, and smoke checks as the acceptance boundary for each migrated Java path.",
+      "Only expand beyond the vocabulary and adjacent desktop notebook loop after the Rust entrypoint and compatibility client are stable."
+    ],
+    "agentId": "poword-milestone-planner",
+    "agentLabel": "Poword Milestone Planner",
+    "generatedAt": "2026-04-25T20:41:28.990Z",
+    "updatedAt": "2026-04-26T00:42:29.174Z",
+    "metadata": {
+      "focusArea": "rust-product-trunk-migration"
+    }
+  },
+  {
+    "id": "POW-M004",
+    "strategyId": "POW-S002",
+    "title": "Retire Duplicate Java Vocabulary Ownership After Bridge Parity",
+    "status": "completed",
+    "track": "rust-mainline",
+    "goal": "Make Rust the single owner of Poword's desktop vocabulary behavior after the initial compatibility bridge is in place, so Java stops reimplementing lookup, notebook, and save rules locally.",
+    "scope": [
+      "Move the remaining Java-facing vocabulary reads and writes onto the supported Rust command surface, including basic query, word detail, notebook save or highlight, undo-safe save follow-ups, notebook metadata updates, and recent notebook reads.",
+      "Remove direct Java business-rule ownership for migrated vocabulary flows so Java becomes a thin compatibility caller that resolves the companion, forwards inputs, and maps typed results.",
+      "Standardize the supported Windows desktop startup and companion handshake path so the Rust front door and the temporary Java bridge both fail early on missing binaries, incompatible capabilities, or unreadable SQLite inputs."
+    ],
+    "exitCriteria": [
+      "The shipped desktop vocabulary flows no longer depend on Java-side DAO composition or Java-owned notebook mutation rules for the migrated paths.",
+      "Rust returns the authoritative result shapes and notebook state for migrated vocabulary operations, and Java only adapts those results for compatibility callers.",
+      "Companion resolution, version or capability checks, and startup failures are explicit and operator-visible before any migrated vocabulary flow attempts partial work."
+    ],
+    "successSignals": [
+      "The Windows overlay and the remaining Java desktop callers read and mutate vocabulary through the same Rust-owned behavior.",
+      "Maintainers can reason about one vocabulary contract instead of debugging drift between Java and Rust paths.",
+      "Java visibly shrinks toward compatibility infrastructure instead of continuing to accumulate permanent desktop logic."
+    ],
+    "casePlanningGuidance": [
+      "Sequence cases from lowest-risk bridge cleanup to highest-value ownership removal: query path, word detail, notebook reads, save or highlight path, metadata path, then undo-sensitive follow-ups.",
+      "Use typed result parsing and capability checks as the acceptance boundary for every migrated Java caller.",
+      "Delete or bypass duplicated Java rules as soon as Rust parity is verified instead of leaving long-lived dual implementations."
+    ],
+    "agentId": "poword-milestone-planner",
+    "agentLabel": "Poword Milestone Planner",
+    "generatedAt": "2026-04-25T22:10:03.402Z",
+    "updatedAt": "2026-04-26T03:08:29.236Z",
+    "metadata": {
+      "focusArea": "rust-vocabulary-ownership"
+    }
+  },
+  {
+    "id": "POW-M005",
+    "strategyId": "POW-S002",
+    "title": "Move The Review Loop Onto The Rust Study Core",
+    "status": "active",
+    "track": "rust-mainline",
+    "goal": "Unify review selection and review-result recording around the Rust-owned SQLite study core so highlighted vocabulary, lookup history, and review outcomes all feed one deterministic learning loop.",
+    "scope": [
+      "Freeze or reuse parity fixtures for the current review-ranking contract, then make Rust own ranked review-candidate selection, diagnostics, and explicit-limit behavior.",
+      "Add Rust-owned review outcome writes against the existing `reviewlog` contract so study results are recorded without reintroducing Java-owned ranking or persistence logic.",
+      "Switch Java compatibility callers and operator commands to consume Rust-ranked review candidates and Rust-written review outcomes without reshaping or resorting results locally."
+    ],
+    "exitCriteria": [
+      "Rust can deterministically rank review words from `dict`, `userwordinfo`, `querylog`, and `reviewlog`, and repeated runs on unchanged SQLite data return the same order.",
+      "Rust can append valid review outcomes to `reviewlog` in a way that existing downstream readers can consume without schema changes.",
+      "Java no longer owns review-word ranking for the migrated desktop and compatibility flows."
+    ],
+    "successSignals": [
+      "Words captured from the Windows selection loop start influencing future review order through the same Rust-owned study logic.",
+      "Review behavior becomes easier to inspect because ranking and outcome recording live in one product core.",
+      "The learning loop stops depending on hidden Java-only prioritization rules."
+    ],
+    "casePlanningGuidance": [
+      "Start by locking parity expectations, then ship Rust diagnostics, then switch ranking ownership, and only then move review-result writes.",
+      "Keep the SQLite tables unchanged and treat contract compatibility as part of the product requirement, not as a temporary convenience.",
+      "Avoid mixing article-generation migration into this stage; keep it centered on the review loop itself."
+    ],
+    "agentId": "poword-milestone-planner",
+    "agentLabel": "Poword Milestone Planner",
+    "generatedAt": "2026-04-25T22:10:03.402Z",
+    "updatedAt": "2026-04-26T03:08:29.236Z",
+    "metadata": {
+      "focusArea": "rust-review-loop"
+    }
+  },
+  {
+    "id": "POW-M006",
+    "strategyId": "POW-S002",
+    "title": "Fence The Legacy Generation Stack Behind Rust-Owned Study Inputs",
+    "status": "backlog",
+    "track": "rust-mainline",
+    "goal": "Keep article generation as Poword's last legacy boundary while making it consume Rust-owned notebook and review contracts instead of recomputing vocabulary selection inside Java.",
+    "scope": [
+      "Refactor the generation entry path so it can accept an explicit ordered review-word payload and related study inputs from Rust without recomputing selection internally.",
+      "Add clear validation and preflight boundaries around generation inputs so invalid or stale Rust-supplied study data fails before AI or article work begins.",
+      "Remove Java-owned review-selection dependency from the generation path while keeping the still-unmigrated article and AI orchestration steps explicit and isolated."
+    ],
+    "exitCriteria": [
+      "Article generation can run from a caller-supplied ordered review-word list and preserves that order end to end.",
+      "Generation no longer needs to invoke Java-owned review ranking when Rust has already supplied the study list.",
+      "The remaining legacy boundary is explicit: Java may still orchestrate generation, but vocabulary and review selection no longer drift separately inside that stack."
+    ],
+    "successSignals": [
+      "Vocabulary captured from lightweight Windows use can flow into downstream study content through the same Rust-owned ranking rules.",
+      "Generation failures become easier to diagnose because input validation happens before expensive AI work starts.",
+      "The final Java-heavy area is clearly isolated instead of bleeding back into the desktop vocabulary trunk."
+    ],
+    "casePlanningGuidance": [
+      "Treat input-handoff refactoring as the first slice, then add validation and preflight, then remove the internal Java recomputation path.",
+      "Keep the focus on contract boundaries and deterministic study inputs rather than on rewriting the full generation pipeline.",
+      "Do not widen this stage into generic automation or broader desktop UI work; it should only isolate the remaining legacy content stack."
+    ],
+    "agentId": "poword-milestone-planner",
+    "agentLabel": "Poword Milestone Planner",
+    "generatedAt": "2026-04-25T22:10:03.402Z",
+    "updatedAt": "2026-04-25T22:10:03.402Z",
+    "metadata": {
+      "focusArea": "generation-boundary-isolation"
+    }
+  }
+]

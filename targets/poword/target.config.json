@@ -1,78 +1,143 @@
 {
-  "id": "poword",
-  "label": "Poword",
-  "description": "Official Poword product repository driven externally by Codex Harness Foundry.",
-  "casesPath": "cases.json",
-  "directionBrief": {
-    "activeTrack": "windows-overlay",
-    "productGoal": "Build a lightweight Poword experience for Windows-wide text selection translation and vocabulary capture.",
-    "userExperience": "When a user selects text anywhere in Windows, Poword should surface a tiny follow-up action, translate quickly on demand, and let the word become a highlighted vocabulary item with minimal interruption.",
-    "platformScope": "Prefer a system-wide Windows experience over a browser-only plugin, and keep the first version focused on lightweight desktop usage.",
-    "implementationPreference": "Use Rust as the preferred implementation language for the Windows-native overlay or helper layer, while keeping the existing Java code only where it is still needed.",
-    "constraints": [
-      "Keep the product runtime lightweight enough for always-on desktop use.",
-      "Do not depend on browser-only extension hooks for the core selection flow.",
-      "Keep the loop tight around selection, translation, highlighting, and saving into the vocabulary notebook.",
-      "Prefer a small Windows-native process instead of a heavier cross-platform desktop shell."
-    ],
-    "avoid": [
-      "Avoid a heavy embedded browser stack for the always-on selection surface.",
-      "Avoid turning the feature into generic browser automation instead of a language product flow.",
-      "Avoid expanding the Java desktop footprint for the always-on overlay if a lighter Rust implementation can own that surface."
-    ],
-    "successSignals": [
-      "Selected text anywhere in Windows can trigger a tiny Poword action affordance.",
-      "Translation feels fast and low-friction.",
-      "Accepted words are visibly marked and stored as vocabulary without extra manual bookkeeping."
-    ],
-    "notes": "This direction should bias planning toward a Rust-first Windows-native interaction layer and lightweight technical choices."
-  },
-  "execution": {
-    "basePrompt": "Act as a disciplined senior engineer working inside the Poword product repository. Read repository truth first, make one coherent and reviewable unit of progress, stay inside the allowed write scope, and leave the repo ready for external evaluation.",
-    "resumePrompt": "Resume the previous Poword development run from repository truth and the saved thread. Continue the same case, make one coherent and reviewable unit of progress, and leave the repo ready for external evaluation.",
-    "sandboxMode": "danger-full-access",
-    "model": null,
-    "defaultWriteScope": [
-      "src",
-      "docs",
-      "pom.xml",
-      "README.md"
-    ],
-    "directionNote": "Prefer a Rust-first Windows-native implementation for the always-on selection overlay and keep product runtime overhead minimal."
-  },
-  "evaluation": {
-    "commands": [
-      {
-        "id": "java-version",
-        "label": "Java version",
-        "command": "java -version"
-      },
-      {
-        "id": "maven-compile",
-        "label": "Maven compile",
-        "command": "powershell -NoProfile -Command \"if (Test-Path '.\\\\mvnw.cmd') { .\\\\mvnw.cmd -q -DskipTests compile; exit $LASTEXITCODE } elseif (Get-Command mvn -ErrorAction SilentlyContinue) { mvn -q -DskipTests compile; exit $LASTEXITCODE } else { Write-Error 'Maven or mvnw.cmd is required'; exit 1 }\""
-      }
-    ]
-  },
-  "planning": {
-    "enabled": true,
-    "batchSize": 3,
-    "basePrompt": "Plan the next small batch of Poword product work from repository truth. Read the provided context packet, avoid repeating verified work, prefer one concrete next implementation case followed by adjacent follow-up cases, and keep every case sized for one coherent harness cycle.",
-    "model": null,
-    "maxRecentHandoffs": 5,
-    "firstGeneratedStatus": "ready",
-    "remainingGeneratedStatus": "backlog",
-    "directionNote": "Windows-wide selection translation overlay. Plan around a Rust-first implementation for the Windows-native layer, not a heavy embedded stack."
-  },
-  "doctor": {
-    "requiredFiles": [
-      "pom.xml",
-      "src/main/java",
-      ".git"
-    ],
-    "requiredCommands": [
-      "java -version",
-      "powershell -NoProfile -Command \"if (Test-Path '.\\\\mvnw.cmd') { Write-Output 'mvnw.cmd'; exit 0 } elseif (Get-Command mvn -ErrorAction SilentlyContinue) { Write-Output 'mvn'; exit 0 } else { Write-Error 'Maven or mvnw.cmd is required'; exit 1 }\""
-    ]
-  }
+    "id":  "poword",
+    "label":  "Poword",
+    "description":  "Official Poword product repository driven externally by Codex Harness Foundry.",
+    "casesPath":  "cases.json",
+    "directionBrief":  {
+                           "activeTrack":  "rust-mainline",
+                           "productGoal":  "Build a lightweight Poword experience for Windows-wide text selection translation and vocabulary capture.",
+                           "userExperience":  "When a user selects text anywhere in Windows, Poword should surface a tiny follow-up action, translate quickly on demand, and let the word become a highlighted vocabulary item with minimal interruption.",
+                           "platformScope":  "Prefer a system-wide Windows experience over a browser-only plugin, and keep the first version focused on lightweight desktop usage.",
+                           "implementationPreference":  "Use Rust as the long-term primary implementation language for Poword, including the product trunk and Windows-native interaction layer. Keep the existing Java code only as a short-term compatibility bridge while core product capabilities are migrated incrementally.",
+                           "constraints":  [
+                                               "Keep the product runtime lightweight enough for always-on desktop use.",
+                                               "Do not depend on browser-only extension hooks for the core selection flow.",
+                                               "Keep the loop tight around selection, translation, highlighting, and saving into the vocabulary notebook.",
+                                               "Prefer a small Windows-native process instead of a heavier cross-platform desktop shell."
+                                           ],
+                           "avoid":  [
+                                         "Avoid a heavy embedded browser stack for the always-on selection surface.",
+                                         "Avoid turning the feature into generic browser automation instead of a language product flow.",
+                                         "Avoid expanding the Java desktop footprint for the always-on overlay if a lighter Rust implementation can own that surface."
+                                     ],
+                           "successSignals":  [
+                                                  "Selected text anywhere in Windows can trigger a tiny Poword action affordance.",
+                                                  "Translation feels fast and low-friction.",
+                                                  "Accepted words are visibly marked and stored as vocabulary without extra manual bookkeeping."
+                                              ],
+                           "notes":  "Current direction: finish the Windows-native overlay path, then progressively migrate Poword\u0027s product trunk to Rust. Java should be treated as temporary compatibility infrastructure rather than the long-term product core."
+                       },
+    "execution":  {
+                      "basePrompt":  "Act as a disciplined senior engineer working inside the Poword product repository. Read repository truth first, make one coherent and reviewable unit of progress, stay inside the allowed write scope, and leave the repo ready for external evaluation.",
+                      "resumePrompt":  "Resume the previous Poword development run from repository truth and the saved thread. Continue the same case, make one coherent and reviewable unit of progress, and leave the repo ready for external evaluation.",
+                      "sandboxMode":  "danger-full-access",
+                      "model":  null,
+                      "defaultWriteScope":  [
+                                                "src",
+                                                "docs",
+                                                "pom.xml",
+                                                "README.md"
+                                            ],
+                      "directionNote":  "Prefer changes that help Rust become the long-term product core. Treat Java additions as compatibility scaffolding unless repository truth requires otherwise."
+                  },
+    "evaluation":  {
+                       "commands":  [
+                                        {
+                                            "id":  "java-version",
+                                            "label":  "Java version",
+                                            "command":  "java -version"
+                                        },
+                                        {
+                                            "id":  "maven-compile",
+                                            "label":  "Maven compile",
+                                            "command":  "powershell -NoProfile -Command \"if (Test-Path \u0027.\\\\mvnw.cmd\u0027) { .\\\\mvnw.cmd -q -DskipTests compile; exit $LASTEXITCODE } elseif (Get-Command mvn -ErrorAction SilentlyContinue) { mvn -q -DskipTests compile; exit $LASTEXITCODE } else { Write-Error \u0027Maven or mvnw.cmd is required\u0027; exit 1 }\""
+                                        }
+                                    ]
+                   },
+    "planning":  {
+                     "enabled":  true,
+                     "strategyPath":  "strategy.json",
+                     "milestonesPath":  "milestones.json",
+                     "strategy":  {
+                                      "agentId":  "poword-strategy-planner",
+                                      "label":  "Poword Strategy Planner",
+                                      "basePrompt":  "Refresh Poword's long-term product strategy from repository truth. Reconcile the current direction brief, recent verified runs, and the actual Rust-versus-Java migration state, then produce one durable strategy that explains where the product should head next and why now.",
+                                      "directionNote":  "Keep the long-term strategy centered on a lightweight Windows-wide language product. Rust should progressively become the product trunk and Java should keep shrinking into compatibility infrastructure.",
+                                      "model":  null,
+                                      "maxRecentHandoffs":  8,
+                                      "refreshAfterVerifiedCases":  5
+                                  },
+                     "milestones":  {
+                                       "agentId":  "poword-milestone-planner",
+                                       "label":  "Poword Milestone Planner",
+                                       "basePrompt":  "Plan Poword's next milestone batch from the current strategy. Break the strategy into sequential, stage-sized milestones that a harness can steadily execute, verify, and hand off without collapsing back into an ungoverned backlog pile.",
+                                       "directionNote":  "Prefer milestones that first complete the Windows-native overlay loop, then migrate adjacent product capabilities into Rust in coherent phases.",
+                                       "model":  null,
+                                       "batchSize":  3
+                                   },
+                     "strategyEvaluator":  {
+                                               "agentId":  "poword-strategy-evaluator",
+                                               "label":  "Poword Strategy Evaluator",
+                                               "basePrompt":  "Evaluate whether Poword's current strategy should remain active, complete, become superseded, or be marked blocked. Use repository truth, milestone progression, and recent verified work. Bias toward lightweight Windows-wide product fit, Rust becoming the product trunk, and Java shrinking into temporary compatibility infrastructure.",
+                                               "directionNote":  "Keep the bar medium-strict. Fail closed when evidence is mixed. Favor durable product fit and clear Rust-mainline progression over cosmetic completion claims.",
+                                               "model":  null
+                                           },
+                     "milestoneEvaluator":  {
+                                                "agentId":  "poword-milestone-evaluator",
+                                                "label":  "Poword Milestone Evaluator",
+                                                "basePrompt":  "Evaluate whether Poword's active milestone should remain active, complete, or be marked blocked. Use milestone exit criteria, recent verified runs, and repository truth. Complete only when the milestone's main outcomes have materially landed.",
+                                                "directionNote":  "Keep the bar medium-strict. The current product arc should keep prioritizing a lightweight Windows-native overlay and steady migration of the product trunk toward Rust.",
+                                                "model":  null
+                                            },
+                     "cases":  {
+                                   "agentId":  "poword-case-planner",
+                                   "label":  "Poword Case Planner",
+                                   "basePrompt":  "Plan the next small batch of Poword product work from repository truth. Read the provided context packet, stay inside the active milestone, avoid repeating verified work, prefer one concrete next implementation case followed by adjacent follow-up cases, and keep every case sized for one coherent harness cycle.",
+                                   "directionNote":  "Bias follow-up planning toward a staged Rust migration path: lightweight Windows-native overlay first, then migrate Poword product trunk capabilities into Rust while keeping Java only as short-term compatibility.",
+                                   "model":  null,
+                                   "batchSize":  3,
+                                   "maxRecentHandoffs":  5,
+                                   "firstGeneratedStatus":  "ready",
+                                   "remainingGeneratedStatus":  "backlog"
+                               },
+                     "contextBudget":  {
+                                           "recentRunsLimit":  4,
+                                           "entrySnapshotLimit":  5,
+                                           "entrySnapshotBytesPerFile":  2500,
+                                           "verifiedInputSnapshotLimit":  3,
+                                           "verifiedInputBytesPerFile":  1800,
+                                           "gitStatusMaxLines":  60,
+                                           "maxContextBytes":  18000
+                                       }
+                 },
+    "bootstrap":  {
+                      "enabled":  true,
+                      "pathEntries":  [
+                                          "%USERPROFILE%\\.cargo\\bin"
+                                      ],
+                      "commands":  [
+                                       {
+                                           "id":  "install-rustup",
+                                           "label":  "Install rustup with winget",
+                                           "command":  "powershell -NoProfile -Command \"$cargo = Join-Path $env:USERPROFILE \u0027.cargo\\\\bin\\\\cargo.exe\u0027; if (Test-Path $cargo) { exit 0 } ; if (-not (Get-Command winget -ErrorAction SilentlyContinue)) { Write-Error \u0027winget is required to bootstrap Rust\u0027; exit 1 } ; winget install --id Rustlang.Rustup -e --accept-package-agreements --accept-source-agreements --disable-interactivity --silent; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE } ; Wait-Process -Name rustup-init -Timeout 900 -ErrorAction SilentlyContinue; if (-not (Test-Path (Join-Path $env:USERPROFILE \u0027.cargo\\\\bin\\\\rustup.exe\u0027))) { Write-Error \u0027rustup.exe was not installed into .cargo\\\\bin\u0027; exit 1 }\""
+                                       },
+                                       {
+                                           "id":  "init-rust-toolchain",
+                                           "label":  "Install stable Rust MSVC toolchain",
+                                           "command":  "powershell -NoProfile -Command \"$rustup = Join-Path $env:USERPROFILE \u0027.cargo\\\\bin\\\\rustup.exe\u0027; if (-not (Test-Path $rustup)) { Write-Error \u0027rustup.exe not found\u0027; exit 1 } ; \u0026 $rustup toolchain install stable-x86_64-pc-windows-msvc --profile minimal; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE } ; \u0026 $rustup default stable-x86_64-pc-windows-msvc; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE } ; if (-not (Test-Path (Join-Path $env:USERPROFILE \u0027.cargo\\\\bin\\\\cargo.exe\u0027))) { Write-Error \u0027cargo.exe not found after rustup setup\u0027; exit 1 }\""
+                                       }
+                                   ]
+                  },
+    "doctor":  {
+                   "requiredFiles":  [
+                                         "pom.xml",
+                                         "src/main/java",
+                                         ".git"
+                                     ],
+                   "requiredCommands":  [
+                                            "java -version",
+                                            "powershell -NoProfile -Command \"$cargo = Join-Path $env:USERPROFILE \u0027.cargo\\\\bin\\\\cargo.exe\u0027; if (Get-Command cargo -ErrorAction SilentlyContinue) { cargo --version; exit $LASTEXITCODE } elseif (Test-Path $cargo) { \u0026 $cargo --version; exit $LASTEXITCODE } else { Write-Error \u0027cargo is required\u0027; exit 1 }\"",
+                                            "powershell -NoProfile -Command \"if (Test-Path \u0027.\\\\mvnw.cmd\u0027) { Write-Output \u0027mvnw.cmd\u0027; exit 0 } elseif (Get-Command mvn -ErrorAction SilentlyContinue) { Write-Output \u0027mvn\u0027; exit 0 } else { Write-Error \u0027Maven or mvnw.cmd is required\u0027; exit 1 }\""
+                                        ]
+               }
 }

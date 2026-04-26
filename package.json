@@ -36,6 +36,13 @@
     "harness:worker:stop": "tsx scripts/harness-worker.ts stop",
     "harness:worker:resume": "tsx scripts/harness-worker.ts resume",
     "harness:dashboard": "tsx scripts/harness-dashboard.ts",
+    "langfuse:init": "tsx scripts/langfuse-local.ts init",
+    "langfuse:up": "tsx scripts/langfuse-local.ts up",
+    "langfuse:down": "tsx scripts/langfuse-local.ts down",
+    "langfuse:logs": "tsx scripts/langfuse-local.ts logs",
+    "langfuse:status": "tsx scripts/langfuse-local.ts status",
+    "langfuse:open": "tsx scripts/langfuse-local.ts open",
+    "langfuse:export": "tsx scripts/langfuse-export.ts",
     "sync:project": "tsx scripts/sync-project.ts",
     "init:project": "tsx scripts/init-project.ts",
     "compose:agents": "pnpm exec agents-md compose",
@@ -52,6 +59,12 @@
     "smoke": "tsx scripts/smoke.ts",
     "typecheck": "tsc --project tsconfig.json",
     "verify": "powershell -ExecutionPolicy Bypass -File scripts/verify.ps1"
+  },
+  "dependencies": {
+    "@langfuse/client": "^5.2.0",
+    "@langfuse/otel": "^5.2.0",
+    "@langfuse/tracing": "^5.2.0",
+    "@opentelemetry/sdk-node": "^0.215.0"
   },
   "devDependencies": {
     "@types/node": "^22.14.1",

@@ -4,6 +4,7 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 
 import { elapsedSeconds } from "./time";
+import type { CodexTerminalEventType } from "./types";
 
 export type CodexRunInput = {
   repoRoot: string;
@@ -15,6 +16,7 @@ export type CodexRunInput = {
   sandboxMode: string;
   model: string | null;
   threadId: string | null;
+  skipGitRepoCheck?: boolean;
   onThreadStarted?: (threadId: string) => Promise<void> | void;
   onEvent?: (event: Record<string, unknown>) => Promise<void> | void;
 };
@@ -28,21 +30,50 @@ export type CodexRunOutput = {
   sandboxModeRequested: string;
   sandboxModeUsed: string;
   fallbackApplied: boolean;
+  turnCompleted: boolean;
+  terminalEventType: CodexTerminalEventType;
+  terminalEventAt: string | null;
 };
 
-function detectCodexFailure(stdoutLog: string, stderrLog: string, lastMessage: string | null) {
+type CodexFailureAnalysis = {
+  message: string | null;
+  retryable: boolean;
+};
+
+function detectCodexFailure(stdoutLog: string, stderrLog: string, lastMessage: string | null): CodexFailureAnalysis {
   const combined = `${stdoutLog}\n${stderrLog}\n${lastMessage ?? ""}`;
   const logonMatch = combined.match(/CreateProcessWithLogonW failed:\s*(\d+)/i);
   if (logonMatch) {
-    return `Codex shell access failed inside the Windows sandbox: CreateProcessWithLogonW failed: ${logonMatch[1]}.`;
+    return {
+      message: `Codex shell access failed inside the Windows sandbox: CreateProcessWithLogonW failed: ${logonMatch[1]}.`,
+      retryable: false,
+    };
   }
 
   const sandboxMatch = combined.match(/windows sandbox:[^\r\n"]+/i);
   if (sandboxMatch) {
-    return `Codex shell access failed inside the Windows sandbox: ${sandboxMatch[0].trim()}.`;
+    return {
+      message: `Codex shell access failed inside the Windows sandbox: ${sandboxMatch[0].trim()}.`,
+      retryable: false,
+    };
   }
 
-  return null;
+  const gatewayMatch = combined.match(
+    /unexpected status\s+(\d{3})\s+([^\r\n]*?)\s+url:\s*(http:\/\/127\.0\.0\.1:15721\/v1\/responses)/i,
+  );
+  if (gatewayMatch) {
+    const [, statusCode, detail, url] = gatewayMatch;
+    const retryable = statusCode === "401" || statusCode === "429" || statusCode.startsWith("5");
+    return {
+      message: `Codex local responses gateway returned ${statusCode}${detail ? ` ${detail.trim()}` : ""} (${url}).`,
+      retryable,
+    };
+  }
+
+  return {
+    message: null,
+    retryable: false,
+  };
 }
 
 function isWindowsSandboxLogonFailure(failureReason: string | null) {
@@ -79,10 +110,17 @@ function codexCommand() {
   return "codex.cmd";
 }
 
+function sleep(ms: number) {
+  return new Promise<void>((resolve) => setTimeout(resolve, ms));
+}
+
 function buildArgs(input: CodexRunInput) {
   const args: string[] = [];
   if (!input.threadId) {
     args.push("exec", "--json", "-C", input.repoRoot, "-s", input.sandboxMode);
+    if (input.skipGitRepoCheck) {
+      args.push("--skip-git-repo-check");
+    }
     if (input.model) {
       args.push("-m", input.model);
     }
@@ -91,6 +129,9 @@ function buildArgs(input: CodexRunInput) {
   }
 
   args.push("exec", "resume", input.threadId, "--json", "-o", input.lastMessageFile);
+  if (input.skipGitRepoCheck) {
+    args.push("--skip-git-repo-check");
+  }
   if (input.model) {
     args.push("-m", input.model);
   }
@@ -113,6 +154,8 @@ async function runCodexAttempt(input: CodexRunInput) {
   let stdoutBuffer = "";
   let attemptStdout = "";
   let attemptStderr = "";
+  let terminalEventType: CodexTerminalEventType = null;
+  let terminalEventAt: string | null = null;
 
   child.stdout.on("data", async (chunk: string) => {
     attemptStdout += chunk;
@@ -133,6 +176,10 @@ async function runCodexAttempt(input: CodexRunInput) {
           currentThreadId = event.thread_id;
           void input.onThreadStarted?.(event.thread_id);
         }
+        if (event.type === "turn.completed" || event.type === "turn.failed") {
+          terminalEventType = event.type;
+          terminalEventAt = new Date().toISOString();
+        }
       } catch {
         // plain-text line; ignore
       }
@@ -152,17 +199,21 @@ async function runCodexAttempt(input: CodexRunInput) {
   const lastMessage = existsSync(input.lastMessageFile)
     ? (await readFile(input.lastMessageFile, "utf8")).trim() || null
     : null;
-  const failureReason = detectCodexFailure(attemptStdout, attemptStderr, lastMessage);
+  const failure = detectCodexFailure(attemptStdout, attemptStderr, lastMessage);
 
   return {
     exitCode,
     threadId: currentThreadId,
     lastMessage,
-    failureReason,
+    failureReason: failure.message,
+    retryableFailure: failure.retryable,
+    terminalEventType,
+    terminalEventAt,
   };
 }
 
 export async function runCodex(input: CodexRunInput): Promise<CodexRunOutput> {
+  const gatewayRetryBackoffMs = [5_000, 10_000, 20_000];
   const start = Date.now();
   await mkdir(path.dirname(input.promptFile), { recursive: true });
   await mkdir(path.dirname(input.stdoutLog), { recursive: true });
@@ -172,8 +223,7 @@ export async function runCodex(input: CodexRunInput): Promise<CodexRunOutput> {
   await writeFile(input.stdoutLog, "", "utf8");
   await writeFile(input.stderrLog, "", "utf8");
   await writeFile(input.lastMessageFile, "", "utf8");
-  const initialResult = await runCodexAttempt(input);
-  let result = initialResult;
+  let result = await runCodexAttempt(input);
   let sandboxModeUsed = input.sandboxMode;
   let fallbackApplied = false;
   const fallbackSandboxMode = !input.threadId ? fallbackSandboxModeFor(input.sandboxMode) : null;
@@ -181,7 +231,7 @@ export async function runCodex(input: CodexRunInput): Promise<CodexRunOutput> {
   if (
     fallbackSandboxMode &&
     fallbackSandboxMode !== input.sandboxMode &&
-    isWindowsSandboxLogonFailure(initialResult.failureReason)
+    isWindowsSandboxLogonFailure(result.failureReason)
   ) {
     fallbackApplied = true;
     await writeFile(
@@ -197,6 +247,26 @@ export async function runCodex(input: CodexRunInput): Promise<CodexRunOutput> {
     sandboxModeUsed = fallbackSandboxMode;
   }
 
+  for (let index = 0; index < gatewayRetryBackoffMs.length; index += 1) {
+    if (result.exitCode === 0 || !result.retryableFailure) {
+      break;
+    }
+
+    const delayMs = gatewayRetryBackoffMs[index];
+    await writeFile(
+      input.stderrLog,
+      `\n[Harness] Retrying Codex after retryable gateway failure in ${Math.floor(delayMs / 1000)}s.\n`,
+      { encoding: "utf8", flag: "a" },
+    );
+    await sleep(delayMs);
+    await writeFile(input.lastMessageFile, "", "utf8");
+    result = await runCodexAttempt({
+      ...input,
+      sandboxMode: sandboxModeUsed,
+      threadId: result.threadId,
+    });
+  }
+
   return {
     exitCode: result.exitCode,
     threadId: result.threadId,
@@ -206,5 +276,8 @@ export async function runCodex(input: CodexRunInput): Promise<CodexRunOutput> {
     sandboxModeRequested: input.sandboxMode,
     sandboxModeUsed,
     fallbackApplied,
+    turnCompleted: result.terminalEventType === "turn.completed",
+    terminalEventType: result.terminalEventType ?? (result.exitCode === 0 ? "process_exit_only" : null),
+    terminalEventAt: result.terminalEventAt,
   };
 }

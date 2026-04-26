@@ -1,15 +1,23 @@
 import { execFileSync, spawn } from "node:child_process";
 import { existsSync, openSync } from "node:fs";
-import { mkdir, writeFile } from "node:fs/promises";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 
 import { FileArtifactStore } from "./artifact-store";
-import { evaluateHarness, peekNextHarnessWork, resumeHarness, runHarness } from "./engine";
+import { doctorHarness, evaluateHarness, peekNextHarnessWork, reconcileHarnessRun, resumeHarness, runHarness } from "./engine";
 import { readRunBoard, readRunEvents, rebuildAndWriteRunBoard } from "./run-board";
 import { JsonStateBackend, JsonWorkerStatusBackend } from "./state-backend";
+import { runShellCommand } from "./process";
 import { createRunId, nowIso } from "./time";
 import { createRunSpec } from "./targets";
-import type { HarnessCheckpoint, HarnessReadyWorkItem, HarnessRunSpec, HarnessWorkerStatus } from "./types";
+import type {
+  DoctorCheck,
+  ExternalTargetConfig,
+  HarnessCheckpoint,
+  HarnessReadyWorkItem,
+  HarnessRunSpec,
+  HarnessWorkerStatus,
+} from "./types";
 
 export type HarnessCliArgs = {
   adapter: string | null;
@@ -73,6 +81,136 @@ function workerLogPaths(spec: HarnessRunSpec) {
   return {
     stdoutLog: path.join(spec.artifactRoot, "worker-stdout.log").replaceAll("\\", "/"),
     stderrLog: path.join(spec.artifactRoot, "worker-stderr.log").replaceAll("\\", "/"),
+  };
+}
+
+function expandPathEntry(value: string, cwd: string) {
+  const withPercentExpansion = value.replace(/%([^%]+)%/g, (_, name: string) => process.env[name] ?? "");
+  const withEnvExpansion = withPercentExpansion.replace(/\$env:([A-Za-z_][A-Za-z0-9_]*)/g, (_, name: string) => process.env[name] ?? "");
+  const withTildeExpansion = withEnvExpansion.startsWith("~")
+    ? path.join(process.env.USERPROFILE ?? process.env.HOME ?? "", withEnvExpansion.slice(1))
+    : withEnvExpansion;
+  return path.isAbsolute(withTildeExpansion) ? path.normalize(withTildeExpansion) : path.normalize(path.join(cwd, withTildeExpansion));
+}
+
+function applyPathEntries(entries: string[]) {
+  if (entries.length === 0) {
+    return [];
+  }
+
+  const existingPath = process.env.PATH ?? "";
+  const currentEntries = existingPath.split(path.delimiter).filter(Boolean);
+  const normalizedCurrent = new Set(currentEntries.map((item) => path.normalize(item).toLowerCase()));
+  const applied: string[] = [];
+
+  for (const entry of entries) {
+    if (!existsSync(entry)) {
+      continue;
+    }
+    const normalized = path.normalize(entry).toLowerCase();
+    if (normalizedCurrent.has(normalized)) {
+      continue;
+    }
+    currentEntries.unshift(entry);
+    normalizedCurrent.add(normalized);
+    applied.push(entry);
+  }
+
+  if (applied.length > 0) {
+    process.env.PATH = currentEntries.join(path.delimiter);
+  }
+
+  return applied;
+}
+
+function summarizeFailedChecks(checks: DoctorCheck[]) {
+  const failed = checks.filter((item) => !item.passed);
+  if (failed.length === 0) {
+    return null;
+  }
+  return failed.map((item) => `${item.label}: ${item.detail}`).join(" | ");
+}
+
+async function loadExternalTargetConfigForSpec(controlRepoRoot: string, args: HarnessCliArgs, spec: HarnessRunSpec) {
+  if (spec.adapterId !== "external-generic") {
+    return null;
+  }
+
+  const { target } = await createRunSpec({
+    controlRepoRoot,
+    manifestPath: args.manifest,
+    targetRegistryPath: args.targetsFile,
+    targetId: spec.targetId,
+    adapterId: spec.adapterId,
+    runId: spec.runId,
+    model: spec.model,
+    taskId: spec.taskId,
+  });
+
+  return {
+    target,
+    config: JSON.parse(await readFile(target.adapterConfigPath, "utf8")) as ExternalTargetConfig,
+  };
+}
+
+async function ensureWorkerPrerequisites(controlRepoRoot: string, args: HarnessCliArgs, spec: HarnessRunSpec) {
+  const externalTarget = await loadExternalTargetConfigForSpec(controlRepoRoot, args, spec);
+  const bootstrap = externalTarget?.config.bootstrap;
+  const resolvedPathEntries = (bootstrap?.pathEntries ?? [])
+    .map((item) => expandPathEntry(item, externalTarget?.target.repoRoot ?? controlRepoRoot));
+
+  applyPathEntries(resolvedPathEntries);
+
+  let doctorResult = await doctorHarness({
+    controlRepoRoot,
+    manifestPath: args.manifest,
+    targetRegistryPath: args.targetsFile,
+    targetId: spec.targetId,
+    adapterId: spec.adapterId,
+  });
+  let failedSummary = summarizeFailedChecks(doctorResult.checks);
+  if (!failedSummary) {
+    return {
+      checks: doctorResult.checks,
+      bootstrapAttempted: false,
+      bootstrapSummary: null,
+    };
+  }
+
+  if (!bootstrap?.enabled || !bootstrap.commands || bootstrap.commands.length === 0) {
+    throw new Error(`Worker prerequisite check failed for ${spec.targetId}: ${failedSummary}`);
+  }
+
+  const bootstrapSummaries: string[] = [];
+  for (const command of bootstrap.commands) {
+    const result = await runShellCommand(command.command, externalTarget?.target.repoRoot ?? controlRepoRoot);
+    const output = (result.stdout || result.stderr).trim();
+    if (result.exitCode !== 0) {
+      const detail = output ? ` ${output}` : "";
+      throw new Error(`Bootstrap command "${command.label}" failed with exit code ${result.exitCode}.${detail}`);
+    }
+    bootstrapSummaries.push(command.label);
+  }
+
+  applyPathEntries(resolvedPathEntries);
+  doctorResult = await doctorHarness({
+    controlRepoRoot,
+    manifestPath: args.manifest,
+    targetRegistryPath: args.targetsFile,
+    targetId: spec.targetId,
+    adapterId: spec.adapterId,
+  });
+  failedSummary = summarizeFailedChecks(doctorResult.checks);
+  if (failedSummary) {
+    throw new Error(`Worker prerequisite check still failing after bootstrap for ${spec.targetId}: ${failedSummary}`);
+  }
+
+  return {
+    checks: doctorResult.checks,
+    bootstrapAttempted: true,
+    bootstrapSummary: bootstrapSummaries.length > 0
+      ? `Bootstrap completed: ${bootstrapSummaries.join(", ")}.`
+      : "Bootstrap completed.",
   };
 }
 
@@ -155,6 +293,8 @@ export async function enrichWorkerStatus(spec: HarnessRunSpec, status: HarnessWo
   if (liveState.runId !== status.runId) {
     return {
       ...status,
+      updatedAt: board?.updatedAt ?? status.updatedAt,
+      latestSummary: board?.latestSummary ?? status.latestSummary,
       activeLane: board?.activeLane ?? status.activeLane,
       activeTaskId: board?.activeNodeId ?? status.activeTaskId,
       activeTaskTitle: board?.tasks.find((task) => task.id === board.activeNodeId)?.title ?? status.activeTaskTitle,
@@ -170,9 +310,10 @@ export async function enrichWorkerStatus(spec: HarnessRunSpec, status: HarnessWo
     caseId: liveState.caseId ?? status.caseId,
     title: liveState.title ?? status.title,
     threadId: liveState.threadId ?? status.threadId,
-    latestSummary: liveState.latestSummary ?? status.latestSummary,
+    latestSummary: board?.latestSummary ?? liveState.latestSummary ?? status.latestSummary,
     latestCheckpoint: liveState.latestCheckpoint ?? status.latestCheckpoint,
     startedAt: liveState.startedAt ?? status.startedAt,
+    updatedAt: board?.updatedAt ?? liveState.updatedAt ?? status.updatedAt,
     activeLane: board?.activeLane ?? status.activeLane,
     activeTaskId: board?.activeNodeId ?? status.activeTaskId,
     activeTaskTitle: board?.tasks.find((task) => task.id === board.activeNodeId)?.title ?? status.activeTaskTitle,
@@ -207,6 +348,44 @@ export async function getEffectiveWorkerStatus(controlRepoRoot: string, args: Ha
   const spec = await buildSpec(controlRepoRoot, args);
   const { backend, status } = await readWorkerStatus(spec);
   let effective = await enrichWorkerStatus(spec, status);
+  let shouldPersist = JSON.stringify(effective) !== JSON.stringify(status);
+
+  if (
+    effective.runId
+    && (
+      effective.state === "interrupted"
+      || effective.state === "failed"
+      || ((effective.state === "starting" || effective.state === "running") && !isProcessAlive(effective.workerPid))
+    )
+  ) {
+    await reconcileHarnessRun({
+      controlRepoRoot,
+      manifestPath: args.manifest,
+      targetRegistryPath: args.targetsFile,
+      targetId: spec.targetId,
+      adapterId: spec.adapterId,
+      runId: effective.runId,
+      model: args.model,
+    }).catch(() => null);
+    effective = await enrichWorkerStatus(spec, await backend.read());
+    shouldPersist = true;
+  }
+
+  if (effective.runId) {
+    const liveSpec = { ...spec, runId: effective.runId, adapterId: effective.adapterId ?? spec.adapterId };
+    const liveState = await new JsonStateBackend(liveSpec).read();
+    if (liveState.runId === effective.runId && (liveState.status === "completed" || liveState.status === "failed")) {
+      effective = {
+        ...effective,
+        state: liveState.status === "completed" ? "completed" : "failed",
+        phase: liveState.phase ?? effective.phase,
+        latestSummary: liveState.latestSummary ?? effective.latestSummary,
+        latestCheckpoint: liveState.latestCheckpoint ?? effective.latestCheckpoint,
+        updatedAt: liveState.updatedAt ?? effective.updatedAt,
+      };
+      shouldPersist = true;
+    }
+  }
 
   if ((effective.state === "starting" || effective.state === "running") && !isProcessAlive(effective.workerPid)) {
     effective = {
@@ -216,6 +395,10 @@ export async function getEffectiveWorkerStatus(controlRepoRoot: string, args: Ha
       updatedAt: nowIso(),
       latestSummary: effective.latestSummary ?? "Harness worker is no longer running.",
     };
+    shouldPersist = true;
+  }
+
+  if (shouldPersist) {
     await backend.write(effective);
   }
 
@@ -261,6 +444,63 @@ export async function startBackgroundWorker(controlRepoRoot: string, mode: "run"
   const stderrLog = path.join(controlRepoRoot, spec.artifactRoot, "worker-stderr.log");
   await writeFile(stdoutLog, "", "utf8");
   await writeFile(stderrLog, "", "utf8");
+
+  await backend.write({
+    state: "starting",
+    workerPid: null,
+    runId,
+    targetId: spec.targetId,
+    adapterId: spec.adapterId,
+    phase: "plan",
+    activeLane: "planner",
+    activeTaskId: "lane:planner:main",
+    activeTaskTitle: "Checking worker prerequisites",
+    activeSubagentCount: 0,
+    caseId: null,
+    title: null,
+    threadId: null,
+    startedAt: nowIso(),
+    updatedAt: nowIso(),
+    latestSummary: "Running doctor checks before worker start.",
+    latestCheckpoint: null,
+    stdoutLog: path.relative(controlRepoRoot, stdoutLog).replaceAll("\\", "/"),
+    stderrLog: path.relative(controlRepoRoot, stderrLog).replaceAll("\\", "/"),
+  });
+
+  try {
+    const prerequisiteResult = await ensureWorkerPrerequisites(controlRepoRoot, args, spec);
+    await backend.update((existing) => ({
+      ...existing,
+      latestSummary: prerequisiteResult.bootstrapAttempted
+        ? prerequisiteResult.bootstrapSummary ?? "Worker prerequisites satisfied after bootstrap."
+        : "Worker prerequisites satisfied.",
+      updatedAt: nowIso(),
+    }));
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    await backend.write({
+      state: "failed",
+      workerPid: null,
+      runId,
+      targetId: spec.targetId,
+      adapterId: spec.adapterId,
+      phase: "plan",
+      activeLane: "planner",
+      activeTaskId: "lane:planner:main",
+      activeTaskTitle: "Worker prerequisite check failed",
+      activeSubagentCount: 0,
+      caseId: null,
+      title: null,
+      threadId: null,
+      startedAt: nowIso(),
+      updatedAt: nowIso(),
+      latestSummary: message,
+      latestCheckpoint: null,
+      stdoutLog: path.relative(controlRepoRoot, stdoutLog).replaceAll("\\", "/"),
+      stderrLog: path.relative(controlRepoRoot, stderrLog).replaceAll("\\", "/"),
+    });
+    throw error;
+  }
 
   await backend.write({
     state: "starting",
@@ -346,7 +586,39 @@ export async function stopBackgroundWorker(controlRepoRoot: string, args: Harnes
   }
 
   terminateProcess(status.workerPid);
+  if (status.runId) {
+    await reconcileHarnessRun({
+      controlRepoRoot,
+      manifestPath: args.manifest,
+      targetRegistryPath: args.targetsFile,
+      targetId: spec.targetId,
+      adapterId: spec.adapterId,
+      runId: status.runId,
+      model: args.model,
+    }).catch(() => null);
+  }
   const next = await enrichWorkerStatus(spec, status);
+  if (status.runId) {
+    const liveSpec = { ...spec, runId: status.runId, adapterId: status.adapterId ?? spec.adapterId };
+    const liveState = await new JsonStateBackend(liveSpec).read();
+    if (liveState.runId === status.runId && (liveState.status === "completed" || liveState.status === "failed")) {
+      const settledState = liveState.status === "completed" ? "completed" : "failed";
+      const settled = {
+        ...next,
+        state: settledState,
+        workerPid: null,
+        updatedAt: nowIso(),
+        latestSummary: liveState.latestSummary ?? next.latestSummary,
+        latestCheckpoint: liveState.latestCheckpoint ?? next.latestCheckpoint,
+      } satisfies HarnessWorkerStatus;
+      await backend.write(settled);
+      return {
+        spec,
+        stopped: true,
+        status: settled,
+      };
+    }
+  }
   await backend.write({
     ...next,
     state: "interrupted",

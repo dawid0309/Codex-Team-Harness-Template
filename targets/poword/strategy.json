@@ -1,0 +1,56 @@
+{
+  "id": "POW-S002",
+  "revision": 2,
+  "status": "active",
+  "track": "rust-mainline",
+  "title": "Poword Strategy: Make Rust the Windows-Native Product Trunk and Shrink Java to Compatibility",
+  "summary": "Poword should now treat the Rust overlay and companion surface as the real product center. Repository truth shows Rust already owns the Windows-native selection watcher and popup, selection preview and preview-confirmed save, translate-and-save and undo receipts, notebook metadata mutations, recent-notebook reads, review selection diagnostics, and a growing set of article-maintenance commands. Java still owns the main operator shell, most SQLite DAO wiring, and the article-generation pipeline, so the durable direction is not to keep a dual-core product but to finish moving the user-facing vocabulary loop and adjacent notebook logic into Rust while reducing Java to a strict compatibility layer that delegates and then disappears.",
+  "horizonGoal": "Poword becomes a lightweight always-on Windows companion where selecting text anywhere in Windows surfaces a tiny native Poword action, returns a fast translation preview on demand, and saves accepted vocabulary as highlighted notebook state through one Rust-owned loop backed by SQLite, with Java no longer acting as the product trunk.",
+  "whyNow": "As of April 25, 2026, recent verified runs proved the hardest migration boundary is already viable: the overlay mutation path was hardened for cache coherence, single-owner writes, supersession, and invalidation, and Java now has a real companion-backed preview-to-save integration slice that validates Rust receipts instead of falling back to Java notebook writes. The repo also already contains a checked-in Rust migration plan and a neutral poword-companion command surface. That means Poword has crossed from exploration into executable migration: continuing to add behavior in both Java and Rust would increase drift, while consolidating now lets the product capitalize on what is already proven in the core Windows selection flow.",
+  "nextMilestoneThemes": [
+    "Finish the Windows-native selection product loop as the primary user experience: tiny action, compact preview, accept, favorite or note edit, undo, quiet dismissal, and resilient cross-app selection handling.",
+    "Complete Rust ownership of vocabulary, notebook, and review logic so overlay and operator paths run the same Rust rules and Java stops owning parallel business logic or direct notebook writes for migrated slices.",
+    "Extend the Rust command surface from vocabulary into article-maintenance workflows already started there, so export, repair, recheck, ranking, and bundle logic converge on one SQLite-backed Rust core.",
+    "Isolate article generation and AI orchestration behind Rust-owned contracts and then migrate that pipeline incrementally, keeping Java only as a temporary launcher until parity is reached."
+  ],
+  "implementationGuidance": [
+    "Treat src/windows-overlay and poword-companion as the seed of the long-term product trunk, not as a sidecar beside the Java app.",
+    "Keep SQLite as the system of record during the transition and use deterministic JSON contracts plus capability and contractVersion checks as the compatibility boundary.",
+    "Prioritize work that tightens the end-user loop around selection, translation, highlight, notebook mutation, and review selection before investing further in lower-frequency legacy flows.",
+    "Do not add new Java desktop interaction features unless they are strictly temporary bridge work for an already planned Rust replacement.",
+    "Do not depend on browser-only extension hooks or a heavy embedded browser shell for the core selection path; keep the always-on surface as a small Windows-native Rust process.",
+    "Move remaining Java vocabulary and notebook responsibilities by slice, then delete the Java-owned implementation for each slice once Rust parity is proven instead of leaving duplicate rules alive.",
+    "Use the same Rust domain and store logic for overlay actions and operator commands so the Windows product and maintenance tooling share one source of behavior truth.",
+    "Keep operator-facing bridge failures explicit and fail-closed when capability metadata, contract versions, or receipt validity drift, rather than silently recomputing behavior in Java."
+  ],
+  "risks": [
+    "Java still owns the main trunk and article-generation orchestration, so legacy momentum can pull roadmap energy back into the old stack and prolong dual ownership.",
+    "A partially migrated vocabulary or notebook flow can still drift if Java fallback logic survives after Rust has become authoritative for that slice.",
+    "Windows-native selection coverage still needs continued hardening across protected fields, unusual controls, session changes, and monitor geometry edge cases.",
+    "If the team over-rotates into maintenance-command migration without finishing the visible Windows selection experience, Poword could improve internals without delivering the clearest product payoff.",
+    "Rust bridge verification is partly constrained by local Windows linker availability, so operational confidence depends on keeping companion-backed smoke coverage and prerequisites explicit."
+  ],
+  "opportunities": [
+    "Poword can differentiate as a Windows-wide language tool instead of a browser-bound translator or generic automation utility.",
+    "The Rust preview, save, metadata, and review contracts already reduce redundant rereads and open a path to a faster, lower-friction notebook loop.",
+    "One Rust-owned SQLite core can support overlay UX, CLI or operator commands, and future maintenance flows with less duplicated logic and less contract ambiguity.",
+    "Shrinking Java into compatibility infrastructure lowers migration risk because the product can advance slice by slice instead of needing an all-at-once rewrite.",
+    "A unified Rust trunk makes it easier to keep the runtime lightweight enough for always-on desktop use while still expanding product capabilities."
+  ],
+  "successSignals": [
+    "Selected text in ordinary Windows apps can surface a tiny Poword action without browser-extension dependencies.",
+    "Preview, save, favorite, note, and undo all run through Rust-owned contracts with fast feedback and without redundant dictionary or notebook rereads.",
+    "Accepted words are visibly highlighted and stored in the vocabulary notebook with minimal interruption and clear recoverability.",
+    "Review selection and notebook reads come from Rust-owned logic and deterministic contracts rather than Java-side recomputation.",
+    "Rust-owned operator and maintenance commands continue to expand while Java business logic and direct SQLite ownership shrink release over release.",
+    "Article generation is the last major compatibility island rather than the center of the product architecture."
+  ],
+  "agentId": "poword-strategy-planner",
+  "agentLabel": "Poword Strategy Planner",
+  "generatedAt": "2026-04-25T20:39:56.153Z",
+  "updatedAt": "2026-04-26T00:44:08.577Z",
+  "sourceRunId": "run-20260426004230-niye45",
+  "metadata": {
+    "focusArea": "rust-mainline-windows-selection-product"
+  }
+}

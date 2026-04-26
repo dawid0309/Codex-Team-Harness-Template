@@ -19,6 +19,8 @@ export type HarnessPlanStepStatus = "pending" | "running" | "completed" | "faile
 
 export type HarnessPlanStepSource = "planner_output" | "contract" | "agent_message" | "inferred" | "mixed";
 
+export type ExternalPlanningLayer = "strategy" | "milestones" | "cases";
+
 export type HarnessRunEventKind =
   | "lifecycle"
   | "agent_message"
@@ -57,6 +59,10 @@ export type SprintContract = {
   metadata: Record<string, unknown>;
 };
 
+export type CodexTerminalEventType = "turn.completed" | "turn.failed" | "process_exit_only" | null;
+
+export type ExecutionFinalizationState = "partial" | "finalized";
+
 export type ExecutionResult = {
   exitCode: number;
   passed: boolean;
@@ -74,7 +80,29 @@ export type ExecutionResult = {
   promptFile: string;
   lastMessageFile: string;
   lastMessage: string | null;
+  turnCompleted: boolean;
+  terminalEventType: CodexTerminalEventType;
+  terminalEventAt: string | null;
+  finalizationState: ExecutionFinalizationState;
 };
+
+export type EvaluationFailureClass =
+  | "command_error"
+  | "infrastructure_failure"
+  | "environment_blocker"
+  | "functional_failure"
+  | "quality_gate_failure"
+  | "unknown";
+
+export type EvaluationFailureScope =
+  | "invocation"
+  | "tooling"
+  | "test"
+  | "coverage"
+  | "lint"
+  | "build"
+  | "runtime"
+  | "unknown";
 
 export type EvaluationEvidence = {
   label: string;
@@ -84,12 +112,22 @@ export type EvaluationEvidence = {
   stdoutLog: string;
   stderrLog: string;
   elapsedSeconds: number;
+  failureClass: EvaluationFailureClass;
+  failureScope: EvaluationFailureScope;
+  retryable: boolean;
+  blocking: boolean;
+  normalizedSummary: string;
+  matchedRuleId: string | null;
 };
 
 export type EvaluationResult = {
   passed: boolean;
   retryable: boolean;
+  blocking: boolean;
+  failureClass: EvaluationFailureClass | null;
+  failureScope: EvaluationFailureScope | null;
   failureReason: string | null;
+  normalizedSummary: string | null;
   findings: string[];
   evidence: EvaluationEvidence[];
   startedAt: string;
@@ -422,6 +460,8 @@ export type ExternalTargetCase = {
   title: string;
   status: ExternalCaseStatus;
   track: string | null;
+  strategyId?: string | null;
+  milestoneId?: string | null;
   goal: string;
   instructions?: string[];
   inputs?: string[];
@@ -438,15 +478,81 @@ export type ExternalEvaluationCommand = {
   command: string;
 };
 
+export type ExternalBootstrapCommand = {
+  id: string;
+  label: string;
+  command: string;
+};
+
 export type ExternalPlanningConfig = {
   enabled: boolean;
-  batchSize: number;
+  strategyPath?: string;
+  milestonesPath?: string;
+  strategy?: ExternalStrategyPlannerConfig;
+  milestones?: ExternalMilestonePlannerConfig;
+  cases?: ExternalCasePlannerConfig;
+  strategyEvaluator?: ExternalPlanningEvaluatorConfig;
+  milestoneEvaluator?: ExternalPlanningEvaluatorConfig;
+  contextBudget?: Partial<ExternalPlanningContextBudget>;
+  batchSize?: number;
+  basePrompt?: string;
+  directionNote?: string | null;
+  model?: string | null;
+  maxRecentHandoffs?: number;
+  firstGeneratedStatus?: "ready";
+  remainingGeneratedStatus?: "backlog";
+};
+
+export type ExternalPlannerAgentConfig = {
+  agentId: string;
+  label: string;
   basePrompt: string;
   directionNote?: string | null;
   model: string | null;
+};
+
+export type ExternalStrategyPlannerConfig = ExternalPlannerAgentConfig & {
+  maxRecentHandoffs: number;
+  refreshAfterVerifiedCases?: number | null;
+};
+
+export type ExternalMilestonePlannerConfig = ExternalPlannerAgentConfig & {
+  batchSize: number;
+};
+
+export type ExternalCasePlannerConfig = ExternalPlannerAgentConfig & {
+  batchSize: number;
   maxRecentHandoffs: number;
   firstGeneratedStatus: "ready";
   remainingGeneratedStatus: "backlog";
+};
+
+export type ExternalPlanningEvaluatorConfig = ExternalPlannerAgentConfig;
+
+export type ExternalPlanningContextBudget = {
+  recentRunsLimit: number;
+  entrySnapshotLimit: number;
+  entrySnapshotBytesPerFile: number;
+  verifiedInputSnapshotLimit: number;
+  verifiedInputBytesPerFile: number;
+  gitStatusMaxLines: number;
+  maxContextBytes: number;
+};
+
+export type PlannerContextBudgetReportEntry = {
+  key: string;
+  originalCount: number;
+  includedCount: number;
+  originalBytes: number;
+  includedBytes: number;
+  truncated: boolean;
+};
+
+export type PlannerContextBudgetReport = {
+  maxContextBytes: number;
+  totalIncludedBytes: number;
+  truncated: boolean;
+  entries: PlannerContextBudgetReportEntry[];
 };
 
 export type ExternalPlannerDraftCase = {
@@ -461,12 +567,84 @@ export type ExternalPlannerDraftCase = {
   metadata?: Record<string, unknown>;
 };
 
+export type ExternalPlannerDraftStrategy = {
+  title: string;
+  summary: string;
+  horizonGoal: string;
+  whyNow?: string | null;
+  nextMilestoneThemes?: string[];
+  implementationGuidance?: string[];
+  risks?: string[];
+  opportunities?: string[];
+  successSignals?: string[];
+  metadata?: Record<string, unknown>;
+};
+
+export type ExternalStrategyStatus = "active" | "completed" | "superseded" | "blocked";
+
+export type ExternalMilestoneStatus = "backlog" | "active" | "completed" | "blocked" | "parked";
+
+export type ExternalPlannerDraftMilestone = {
+  title: string;
+  goal: string;
+  scope?: string[];
+  exitCriteria?: string[];
+  successSignals?: string[];
+  casePlanningGuidance?: string[];
+  metadata?: Record<string, unknown>;
+};
+
+export type ExternalTargetStrategy = {
+  id: string;
+  revision: number;
+  status: ExternalStrategyStatus;
+  track: string | null;
+  title: string;
+  summary: string;
+  horizonGoal: string;
+  whyNow: string | null;
+  nextMilestoneThemes: string[];
+  implementationGuidance: string[];
+  risks: string[];
+  opportunities: string[];
+  successSignals: string[];
+  agentId: string;
+  agentLabel: string;
+  generatedAt: string;
+  updatedAt: string;
+  sourceRunId: string;
+  metadata?: Record<string, unknown>;
+};
+
+export type ExternalTargetMilestone = {
+  id: string;
+  strategyId: string | null;
+  title: string;
+  status: ExternalMilestoneStatus;
+  track: string | null;
+  goal: string;
+  scope: string[];
+  exitCriteria: string[];
+  successSignals: string[];
+  casePlanningGuidance: string[];
+  agentId: string;
+  agentLabel: string;
+  generatedAt: string;
+  updatedAt: string;
+  metadata?: Record<string, unknown>;
+};
+
 export type ExternalPlannerContextPacket = {
   targetId: string;
   targetLabel: string;
   targetRepoRoot: string;
   generatedAt: string;
+  truncated: boolean;
+  budgetReport: PlannerContextBudgetReport;
   currentCases: ExternalTargetCase[];
+  currentStrategy: ExternalTargetStrategy | null;
+  currentMilestones: ExternalTargetMilestone[];
+  activeMilestone: ExternalTargetMilestone | null;
   recentRuns: Array<{
     runId: string;
     caseId: string | null;
@@ -480,6 +658,9 @@ export type ExternalPlannerContextPacket = {
   entrySnapshots: Array<{
     path: string;
     content: string;
+    originalBytes?: number;
+    includedBytes?: number;
+    truncated?: boolean;
   }>;
   latestVerifiedCase: {
     id: string;
@@ -491,17 +672,43 @@ export type ExternalPlannerContextPacket = {
   latestVerifiedInputSnapshots: Array<{
     path: string;
     content: string;
+    originalBytes?: number;
+    includedBytes?: number;
+    truncated?: boolean;
   }>;
 };
 
 export type ExternalPlannerPublishResult = {
+  layer: ExternalPlanningLayer;
   source: "generated";
   generatedCount: number;
   publishedCount: number;
   firstReadyCaseId: string | null;
   summary: string;
-  casesPath: string;
-  generatedCases: ExternalTargetCase[];
+  outputPath: string;
+  strategy?: ExternalTargetStrategy | null;
+  generatedMilestones?: ExternalTargetMilestone[];
+  generatedCases?: ExternalTargetCase[];
+};
+
+export type ExternalPlanningEvaluationDecision = "active" | "completed" | "superseded" | "blocked";
+
+export type ExternalPlanningEvaluation = {
+  layer: "strategy" | "milestone";
+  targetId: string;
+  strategyId: string | null;
+  milestoneId: string | null;
+  agentId: string;
+  agentLabel: string;
+  evaluatedAt: string;
+  sourceRunId: string;
+  status: ExternalPlanningEvaluationDecision;
+  decision: ExternalPlanningEvaluationDecision;
+  summary: string;
+  evidence: string[];
+  matchedExitCriteria: string[];
+  missingExitCriteria: string[];
+  recommendedNextAction: string | null;
 };
 
 export type ExternalDirectionBrief = {
@@ -534,6 +741,11 @@ export type ExternalTargetConfig = {
     commands: ExternalEvaluationCommand[];
   };
   planning?: ExternalPlanningConfig;
+  bootstrap?: {
+    enabled: boolean;
+    commands: ExternalBootstrapCommand[];
+    pathEntries?: string[];
+  };
   doctor: {
     requiredFiles: string[];
     requiredCommands: string[];

@@ -169,6 +169,12 @@ async function runVerificationCommands(
       stdoutLog,
       stderrLog,
       elapsedSeconds: result.elapsedSeconds,
+      failureClass: result.exitCode === 0 ? "unknown" : "functional_failure",
+      failureScope: result.exitCode === 0 ? "unknown" : "build",
+      retryable: result.exitCode !== 0,
+      blocking: result.exitCode !== 0,
+      normalizedSummary: result.exitCode === 0 ? `${item.label} passed.` : `${item.label} failed.`,
+      matchedRuleId: null,
     });
     if (result.exitCode !== 0) {
       break;
@@ -328,6 +334,10 @@ export function createFoundryAdapter(manifest: ProjectAdapterManifest): HarnessT
         promptFile,
         lastMessageFile,
         lastMessage: result.lastMessage,
+        turnCompleted: result.turnCompleted,
+        terminalEventType: result.terminalEventType,
+        terminalEventAt: result.terminalEventAt,
+        finalizationState: "partial",
       };
 
       return execution;
@@ -346,8 +356,12 @@ export function createFoundryAdapter(manifest: ProjectAdapterManifest): HarnessT
 
       const result: EvaluationResult = {
         passed: !failed,
-        retryable: true,
+        retryable: failed ? failed.retryable : false,
+        blocking: failed ? failed.blocking : false,
+        failureClass: failed ? failed.failureClass : null,
+        failureScope: failed ? failed.failureScope : null,
         failureReason: failed ? `Evaluation stage "${failed.label}" failed.` : null,
+        normalizedSummary: failed ? failed.normalizedSummary : null,
         findings: failed ? [`${failed.label} failed with exit code ${failed.returnCode ?? "unknown"}.`] : [],
         evidence,
         startedAt,

@@ -1,12 +1,14 @@
 import { existsSync } from "node:fs";
+import { readFile } from "node:fs/promises";
 import path from "node:path";
 
 import { FileArtifactStore } from "./artifact-store";
 import { isNoReadyWorkError } from "./errors";
 import { createExternalTargetAdapter } from "./external-target";
 import { createFoundryAdapter } from "./foundry-adapter";
+import { createLangfuseLiveRunObserver, scoreHarnessEvaluation, type LangfuseLiveRunObserver } from "./langfuse-observability";
 import { loadHarnessManifest, resolveAdapterManifest } from "./manifest";
-import { appendRunEventAndRebuild, createEmptyRunBoard, createLifecycleEvent, normalizeCodexEvent } from "./run-board";
+import { appendRunEventAndRebuild, createEmptyRunBoard, createLifecycleEvent, normalizeCodexEvent, readRunBoard, readRunEvents } from "./run-board";
 import { JsonStateBackend, writeCheckpoint } from "./state-backend";
 import { createRunId, nowIso } from "./time";
 import { createRunSpec, resolveTargetForSpec } from "./targets";
@@ -17,6 +19,7 @@ import type {
   HarnessArtifactStore,
   HarnessCheckpoint,
   HarnessContext,
+  CodexTerminalEventType,
   HarnessLiveState,
   HarnessPhase,
   HarnessReadyWorkItem,
@@ -28,25 +31,28 @@ import type {
 
 class RunEventRecorder {
   private chain: Promise<void> = Promise.resolve();
+  private readonly langfuse: LangfuseLiveRunObserver;
 
   constructor(
     private readonly spec: HarnessRunSpec,
     private readonly store: HarnessArtifactStore,
-  ) {}
+  ) {
+    this.langfuse = createLangfuseLiveRunObserver(spec);
+  }
 
   async initialize(options: { reset: boolean }) {
     if (options.reset) {
       await this.store.writeText("events.jsonl", "");
       await this.store.writeJson("run-board.json", createEmptyRunBoard(this.spec));
-      return;
-    }
-
-    if (!existsSync(this.store.resolve("events.jsonl"))) {
+    } else if (!existsSync(this.store.resolve("events.jsonl"))) {
       await this.store.writeText("events.jsonl", "");
     }
     if (!existsSync(this.store.resolve("run-board.json"))) {
       await this.store.writeJson("run-board.json", createEmptyRunBoard(this.spec));
     }
+    await this.langfuse.initialize().catch((error) => {
+      console.warn(`[Langfuse] Live observer disabled for ${this.spec.runId}: ${error instanceof Error ? error.message : String(error)}`);
+    });
   }
 
   async recordLifecycle(input: {
@@ -57,14 +63,18 @@ class RunEventRecorder {
     summary: string | null;
   }) {
     return this.enqueue(async () => {
-      await appendRunEventAndRebuild(this.spec, this.store, createLifecycleEvent({
+      const event = createLifecycleEvent({
         spec: this.spec,
         phase: input.phase,
         lane: input.lane,
         status: input.status,
         title: input.title,
         summary: input.summary,
-      }));
+      });
+      await appendRunEventAndRebuild(this.spec, this.store, event);
+      await this.langfuse.recordLifecycle(event).catch((error) => {
+        console.warn(`[Langfuse] Failed to record lifecycle event for ${this.spec.runId}: ${error instanceof Error ? error.message : String(error)}`);
+      });
     });
   }
 
@@ -75,6 +85,15 @@ class RunEventRecorder {
         return;
       }
       await appendRunEventAndRebuild(this.spec, this.store, event);
+      await this.langfuse.recordEvent(event).catch((error) => {
+        console.warn(`[Langfuse] Failed to record Codex event for ${this.spec.runId}: ${error instanceof Error ? error.message : String(error)}`);
+      });
+    });
+  }
+
+  async updateContract(contract: SprintContract) {
+    await this.langfuse.updateContract(contract).catch((error) => {
+      console.warn(`[Langfuse] Failed to update contract metadata for ${this.spec.runId}: ${error instanceof Error ? error.message : String(error)}`);
     });
   }
 
@@ -243,6 +262,326 @@ function createExecutionObserver(
   };
 }
 
+async function readLastMessage(filePath: string) {
+  if (!existsSync(filePath)) {
+    return null;
+  }
+  const content = (await readFile(filePath, "utf8")).trim();
+  return content || null;
+}
+
+async function inferExecutionTerminalState(spec: HarnessRunSpec, store: HarnessArtifactStore) {
+  const [events, board] = await Promise.all([
+    readRunEvents(store).catch(() => [] as Awaited<ReturnType<typeof readRunEvents>>),
+    readRunBoard(store).catch(() => null),
+  ]);
+  const threadStarted = events.find((event) => event.raw?.type === "thread.started");
+  const terminalEvent = [...events].reverse().find((event) => (
+    event.raw?.type === "turn.completed" || event.raw?.type === "turn.failed"
+  )) ?? null;
+  const terminalEventType = (terminalEvent?.raw?.type as CodexTerminalEventType | undefined)
+    ?? (board?.lanes.executor.status === "completed" ? "turn.completed" : null);
+  return {
+    events,
+    board,
+    threadId: typeof threadStarted?.raw?.thread_id === "string" ? threadStarted.raw.thread_id : null,
+    terminalEventType: terminalEventType ?? (board?.lanes.executor.status === "failed" ? "turn.failed" : null),
+    terminalEventAt: terminalEvent?.ts ?? null,
+    turnCompleted: terminalEventType === "turn.completed",
+  };
+}
+
+function executionArtifactPaths(store: HarnessArtifactStore, resume: boolean) {
+  const prefix = resume ? "execution/resume" : "execution/run";
+  return {
+    stdoutLog: store.resolve(`${prefix}.stdout.log`),
+    stderrLog: store.resolve(`${prefix}.stderr.log`),
+    lastMessageFile: store.resolve(`${prefix}.last-message.txt`),
+    promptFile: store.resolve(resume ? "prompts/resume.md" : "prompts/execute.md"),
+  };
+}
+
+async function ensureExecutionArtifact(context: HarnessContext, contract: SprintContract, resume: boolean) {
+  const primaryFile = resume ? "execution.resume.json" : "execution.json";
+  const existing = await context.artifactStore.readJson<ExecutionResult>(primaryFile).catch(() => null);
+  if (existing) {
+    return { execution: existing, reconciled: false, file: context.artifactStore.resolve(primaryFile) };
+  }
+
+  const inferred = await inferExecutionTerminalState(context.runSpec, context.artifactStore);
+  if (!inferred.terminalEventType) {
+    return { execution: null, reconciled: false, file: null };
+  }
+
+  const paths = executionArtifactPaths(context.artifactStore, resume);
+  const lastMessage = await readLastMessage(paths.lastMessageFile);
+  const execution: ExecutionResult = {
+    exitCode: inferred.terminalEventType === "turn.failed" ? 1 : 0,
+    passed: inferred.terminalEventType === "turn.completed",
+    failureReason: inferred.terminalEventType === "turn.failed"
+      ? (lastMessage ?? "Codex turn failed before harness finalization.")
+      : null,
+    sandboxModeRequested: "unknown",
+    sandboxModeUsed: "unknown",
+    fallbackApplied: false,
+    resume,
+    threadId: inferred.threadId,
+    startedAt: inferred.events[0]?.ts ?? nowIso(),
+    finishedAt: inferred.terminalEventAt ?? nowIso(),
+    elapsedSeconds: 0,
+    stdoutLog: paths.stdoutLog,
+    stderrLog: paths.stderrLog,
+    promptFile: paths.promptFile,
+    lastMessageFile: paths.lastMessageFile,
+    lastMessage,
+    turnCompleted: inferred.turnCompleted,
+    terminalEventType: inferred.terminalEventType,
+    terminalEventAt: inferred.terminalEventAt,
+    finalizationState: "partial",
+  };
+  const executionFile = await context.artifactStore.writeJson(primaryFile, execution);
+  await context.artifactStore.writeJson("execution.reconciled.json", {
+    reconciledAt: nowIso(),
+    reconciliationReason: `Recovered missing ${primaryFile} from Codex terminal events.`,
+    source: inferred.terminalEventType,
+    execution,
+  });
+  return { execution, reconciled: true, file: executionFile };
+}
+
+async function persistExecutionCheckpoint(input: {
+  spec: HarnessRunSpec;
+  store: HarnessArtifactStore;
+  stateBackend: JsonStateBackend;
+  contract: SprintContract;
+  execution: ExecutionResult;
+  contractFile: string;
+  executionFile: string;
+  summaryPrefix?: string;
+}) {
+  const checkpoint = await writePhaseCheckpoint(input.spec, input.store, "execute", {
+    caseId: input.contract.caseId,
+    title: input.contract.title,
+    contractFile: relativeToControlRepo(input.spec, input.contractFile),
+    executionFile: relativeToControlRepo(input.spec, input.executionFile),
+    threadId: input.execution.threadId,
+    summary: input.execution.lastMessage ?? `${input.summaryPrefix ?? "Execution completed"} for ${input.contract.caseId}.`,
+  });
+  await updateLiveState(input.stateBackend, input.spec, "executed", {
+    phase: "execute",
+    caseId: input.contract.caseId,
+    title: input.contract.title,
+    threadId: input.execution.threadId,
+    summary: input.execution.lastMessage ?? `${input.summaryPrefix ?? "Execution completed"} for ${input.contract.caseId}.`,
+    checkpointPath: relativeToControlRepo(input.spec, checkpoint),
+  });
+  return checkpoint;
+}
+
+async function finalizeRunArtifacts(input: {
+  spec: HarnessRunSpec;
+  context: HarnessContext;
+  stateBackend: JsonStateBackend;
+  recorder: RunEventRecorder;
+  contract: SprintContract;
+  execution: ExecutionResult;
+  evaluation: EvaluationResult;
+  completion: HarnessCompletionUpdate | null;
+  contractFile: string;
+  executionFile: string;
+  evaluationFile: string;
+  resume: boolean;
+}) {
+  const handoffFile = input.resume ? "handoff.resume.md" : "handoff.md";
+  await input.recorder.recordLifecycle({
+    phase: "handoff",
+    lane: "handoff",
+    status: "running",
+    title: input.resume ? `Preparing resumed handoff for ${input.contract.caseId}` : `Preparing handoff for ${input.contract.caseId}`,
+    summary: `Preparing handoff for ${input.contract.caseId}.`,
+  });
+  await input.context.artifactStore.writeText(
+    handoffFile,
+    [
+      "# Harness Handoff",
+      "",
+      `- run_id: ${input.spec.runId}`,
+      `- target: ${input.spec.targetId}`,
+      `- adapter: ${input.spec.adapterId}`,
+      `- task: ${input.contract.caseId}`,
+      `- title: ${input.contract.title}`,
+      `- thread_id: ${input.execution.threadId ?? "n/a"}`,
+      `- execution_passed: ${input.execution.passed}`,
+      `- evaluation_passed: ${input.evaluation.passed}`,
+      `- evaluation_class: ${input.evaluation.failureClass ?? "none"}`,
+      `- retryable: ${input.evaluation.retryable}`,
+      `- completion_update: ${input.completion?.summary ?? "none"}`,
+      `- summary: ${input.execution.lastMessage ?? input.evaluation.failureReason ?? "No summary emitted."}`,
+    ].join("\n"),
+  );
+  const finalExecution: ExecutionResult = {
+    ...input.execution,
+    finalizationState: "finalized",
+  };
+  await input.context.artifactStore.writeJson(input.resume ? "execution.resume.json" : "execution.json", finalExecution);
+  const handoffCheckpoint = await writePhaseCheckpoint(input.spec, input.context.artifactStore, "handoff", {
+    caseId: input.contract.caseId,
+    title: input.contract.title,
+    contractFile: relativeToControlRepo(input.spec, input.contractFile),
+    executionFile: relativeToControlRepo(input.spec, input.executionFile),
+    evaluationFile: relativeToControlRepo(input.spec, input.evaluationFile),
+    threadId: input.execution.threadId,
+    summary: input.evaluation.passed
+      ? `${input.resume ? "Resumed run completed" : "Completed"} ${input.contract.caseId}.`
+      : input.evaluation.failureReason ?? `Evaluation failed for ${input.contract.caseId}.`,
+  });
+  await input.recorder.recordLifecycle({
+    phase: "handoff",
+    lane: "handoff",
+    status: input.evaluation.passed ? "completed" : "failed",
+    title: input.evaluation.passed
+      ? `${input.resume ? "Resumed run completed" : "Completed"} ${input.contract.caseId}`
+      : `${input.resume ? "Resumed handoff failed" : "Handoff failed"} for ${input.contract.caseId}`,
+    summary: input.evaluation.passed
+      ? `${input.resume ? "Resumed run completed" : "Completed"} ${input.contract.caseId}.`
+      : input.evaluation.failureReason ?? `Evaluation failed for ${input.contract.caseId}.`,
+  });
+  await input.recorder.flush();
+  await updateLiveState(input.stateBackend, input.spec, input.evaluation.passed ? "completed" : "failed", {
+    phase: "handoff",
+    caseId: input.contract.caseId,
+    title: input.contract.title,
+    threadId: input.execution.threadId,
+    summary: input.evaluation.passed
+      ? `${input.resume ? "Resumed run completed" : "Completed"} ${input.contract.caseId}.`
+      : input.evaluation.failureReason ?? `Evaluation failed for ${input.contract.caseId}.`,
+    failureReason: input.evaluation.failureReason,
+    checkpointPath: relativeToControlRepo(input.spec, handoffCheckpoint),
+  });
+  return finalExecution;
+}
+
+async function reconcileRunArtifacts(input: {
+  spec: HarnessRunSpec;
+  context: HarnessContext;
+  targetAdapter: HarnessTarget;
+  stateBackend: JsonStateBackend;
+  recorder: RunEventRecorder;
+  contract: SprintContract;
+  contractFile: string;
+}) {
+  const primaryExecution = await ensureExecutionArtifact(input.context, input.contract, false);
+  if (!primaryExecution.execution) {
+    return null;
+  }
+  let execution = primaryExecution.execution;
+  if (primaryExecution.reconciled && primaryExecution.file) {
+    await persistExecutionCheckpoint({
+      spec: input.spec,
+      store: input.context.artifactStore,
+      stateBackend: input.stateBackend,
+      contract: input.contract,
+      execution,
+      contractFile: input.contractFile,
+      executionFile: primaryExecution.file,
+      summaryPrefix: "Recovered execution",
+    });
+    await input.recorder.recordLifecycle({
+      phase: "execute",
+      lane: "executor",
+      status: execution.passed ? "completed" : "failed",
+      title: execution.passed ? `Recovered execution for ${input.contract.caseId}` : `Recovered failed execution for ${input.contract.caseId}`,
+      summary: execution.lastMessage ?? execution.failureReason ?? `Recovered execution for ${input.contract.caseId}.`,
+    });
+  }
+
+  let evaluation = await input.context.artifactStore.readJson<EvaluationResult>("evaluation.json").catch(() => null);
+  let completion = await input.context.artifactStore.readJson<HarnessCompletionUpdate>("completion.json").catch(() => null);
+  const checkpoint = await input.context.artifactStore.readJson<HarnessCheckpoint>("checkpoint.json").catch(() => null);
+  if (!evaluation) {
+    await updateLiveState(input.stateBackend, input.spec, "evaluating", {
+      phase: "evaluate",
+      caseId: input.contract.caseId,
+      title: input.contract.title,
+      threadId: execution.threadId,
+      summary: `Reconciling evaluation for ${input.contract.caseId}.`,
+      failureReason: null,
+    });
+    await input.recorder.recordLifecycle({
+      phase: "evaluate",
+      lane: "evaluator",
+      status: "running",
+      title: `Reconciling evaluation for ${input.contract.caseId}`,
+      summary: `Reconciling evaluation for ${input.contract.caseId}.`,
+    });
+    evaluation = await input.targetAdapter.evaluate({ ...input.context, contract: input.contract, execution });
+    const evaluationFile = await input.context.artifactStore.writeJson("evaluation.json", evaluation);
+    await scoreHarnessEvaluation(input.spec, input.context.artifactStore, evaluation);
+    if (evaluation.passed && input.targetAdapter.completeWork) {
+      completion = await input.targetAdapter.completeWork({
+        ...input.context,
+        contract: input.contract,
+        execution,
+        evaluation,
+      });
+      if (completion) {
+        await input.context.artifactStore.writeJson("completion.json", completion);
+      }
+    }
+    await input.recorder.recordLifecycle({
+      phase: "evaluate",
+      lane: "evaluator",
+      status: evaluation.passed ? "completed" : "failed",
+      title: evaluation.passed ? `Evaluation passed for ${input.contract.caseId}` : `Evaluation failed for ${input.contract.caseId}`,
+      summary: evaluation.passed
+        ? `Evaluation passed for ${input.contract.caseId}.`
+        : evaluation.failureReason ?? `Evaluation failed for ${input.contract.caseId}.`,
+    });
+    execution = await finalizeRunArtifacts({
+      spec: input.spec,
+      context: input.context,
+      stateBackend: input.stateBackend,
+      recorder: input.recorder,
+      contract: input.contract,
+      execution,
+      evaluation,
+      completion: completion ?? null,
+      contractFile: input.contractFile,
+      executionFile: primaryExecution.file ?? input.context.artifactStore.resolve("execution.json"),
+      evaluationFile,
+      resume: false,
+    });
+  } else if ((checkpoint?.phase !== "handoff") || execution.finalizationState !== "finalized") {
+    if (evaluation.passed && !completion && input.targetAdapter.completeWork) {
+      completion = await input.targetAdapter.completeWork({
+        ...input.context,
+        contract: input.contract,
+        execution,
+        evaluation,
+      });
+      if (completion) {
+        await input.context.artifactStore.writeJson("completion.json", completion);
+      }
+    }
+    execution = await finalizeRunArtifacts({
+      spec: input.spec,
+      context: input.context,
+      stateBackend: input.stateBackend,
+      recorder: input.recorder,
+      contract: input.contract,
+      execution,
+      evaluation,
+      completion: completion ?? null,
+      contractFile: input.contractFile,
+      executionFile: primaryExecution.file ?? input.context.artifactStore.resolve("execution.json"),
+      evaluationFile: input.context.artifactStore.resolve("evaluation.json"),
+      resume: false,
+    });
+  }
+
+  return { execution, evaluation, completion };
+}
+
 export async function runHarness(input: {
   controlRepoRoot: string;
   manifestPath?: string;
@@ -296,6 +635,7 @@ export async function runHarness(input: {
 
   try {
     contract = await targetAdapter.plan(context);
+    await recorder.updateContract(contract);
     const contractFile = await context.artifactStore.writeJson("contract.json", contract);
     const planCheckpoint = await writePhaseCheckpoint(spec, context.artifactStore, "plan", {
       caseId: contract.caseId,
@@ -342,27 +682,19 @@ export async function runHarness(input: {
       executionObserver: createExecutionObserver(stateBackend, spec, contract, recorder),
     });
     const executionFile = await context.artifactStore.writeJson("execution.json", execution);
+    await persistExecutionCheckpoint({
+      spec,
+      store: context.artifactStore,
+      stateBackend,
+      contract,
+      execution,
+      contractFile,
+      executionFile,
+    });
     if (!execution.passed) {
       await recorder.flush();
       throw new Error(execution.failureReason ?? `Execution failed with exit code ${execution.exitCode}.`);
     }
-
-    const executeCheckpoint = await writePhaseCheckpoint(spec, context.artifactStore, "execute", {
-      caseId: contract.caseId,
-      title: contract.title,
-      contractFile: relativeToControlRepo(spec, contractFile),
-      executionFile: relativeToControlRepo(spec, executionFile),
-      threadId: execution.threadId,
-      summary: execution.lastMessage ?? `Execution completed for ${contract.caseId}.`,
-    });
-    await updateLiveState(stateBackend, spec, "executed", {
-      phase: "execute",
-      caseId: contract.caseId,
-      title: contract.title,
-      threadId: execution.threadId,
-      summary: execution.lastMessage ?? `Execution completed for ${contract.caseId}.`,
-      checkpointPath: relativeToControlRepo(spec, executeCheckpoint),
-    });
     await recorder.recordLifecycle({
       phase: "execute",
       lane: "executor",
@@ -387,6 +719,7 @@ export async function runHarness(input: {
     });
     evaluation = await targetAdapter.evaluate({ ...context, contract, execution });
     const evaluationFile = await context.artifactStore.writeJson("evaluation.json", evaluation);
+    await scoreHarnessEvaluation(spec, context.artifactStore, evaluation);
     if (evaluation.passed && targetAdapter.completeWork) {
       completion = await targetAdapter.completeWork({ ...context, contract, execution, evaluation });
       if (completion) {
@@ -402,63 +735,19 @@ export async function runHarness(input: {
         ? `Evaluation passed for ${contract.caseId}.`
         : evaluation.failureReason ?? `Evaluation failed for ${contract.caseId}.`,
     });
-    await recorder.recordLifecycle({
-      phase: "handoff",
-      lane: "handoff",
-      status: "running",
-      title: `Preparing handoff for ${contract.caseId}`,
-      summary: `Preparing handoff for ${contract.caseId}.`,
-    });
-    await context.artifactStore.writeText(
-      "handoff.md",
-      [
-        "# Harness Handoff",
-        "",
-        `- run_id: ${spec.runId}`,
-        `- target: ${spec.targetId}`,
-        `- adapter: ${spec.adapterId}`,
-        `- task: ${contract.caseId}`,
-        `- title: ${contract.title}`,
-        `- thread_id: ${execution.threadId ?? "n/a"}`,
-        `- execution_passed: ${execution.passed}`,
-        `- evaluation_passed: ${evaluation.passed}`,
-        `- completion_update: ${completion?.summary ?? "none"}`,
-        `- summary: ${execution.lastMessage ?? evaluation.failureReason ?? "No summary emitted."}`,
-      ].join("\n"),
-    );
-
-    const handoffCheckpoint = await writePhaseCheckpoint(spec, context.artifactStore, "handoff", {
-      caseId: contract.caseId,
-      title: contract.title,
-      contractFile: relativeToControlRepo(spec, contractFile),
-      executionFile: relativeToControlRepo(spec, executionFile),
-      evaluationFile: relativeToControlRepo(spec, evaluationFile),
-      threadId: execution.threadId,
-      summary: evaluation.passed
-        ? `Completed ${contract.caseId}.`
-        : evaluation.failureReason ?? `Evaluation failed for ${contract.caseId}.`,
-    });
-    await recorder.recordLifecycle({
-      phase: "handoff",
-      lane: "handoff",
-      status: evaluation.passed ? "completed" : "failed",
-      title: evaluation.passed ? `Completed ${contract.caseId}` : `Handoff failed for ${contract.caseId}`,
-      summary: evaluation.passed
-        ? `Completed ${contract.caseId}.`
-        : evaluation.failureReason ?? `Evaluation failed for ${contract.caseId}.`,
-    });
-    await recorder.flush();
-
-    await updateLiveState(stateBackend, spec, evaluation.passed ? "completed" : "failed", {
-      phase: "handoff",
-      caseId: contract.caseId,
-      title: contract.title,
-      threadId: execution.threadId,
-      summary: evaluation.passed
-        ? `Completed ${contract.caseId}.`
-        : evaluation.failureReason ?? `Evaluation failed for ${contract.caseId}.`,
-      failureReason: evaluation.failureReason,
-      checkpointPath: relativeToControlRepo(spec, handoffCheckpoint),
+    execution = await finalizeRunArtifacts({
+      spec,
+      context,
+      stateBackend,
+      recorder,
+      contract,
+      execution,
+      evaluation,
+      completion,
+      contractFile,
+      executionFile,
+      evaluationFile,
+      resume: false,
     });
     return { spec, contract, execution, evaluation, statePath: stateBackend.path() };
   } catch (error) {
@@ -522,6 +811,28 @@ export async function resumeHarness(input: {
   const checkpoint = await context.artifactStore.readJson<HarnessCheckpoint>("checkpoint.json");
   const recorder = new RunEventRecorder(spec, context.artifactStore);
   await recorder.initialize({ reset: false });
+  await recorder.updateContract(contract);
+  const reconciled = await reconcileRunArtifacts({
+    spec,
+    context,
+    targetAdapter: target,
+    stateBackend,
+    recorder,
+    contract,
+    contractFile: context.artifactStore.resolve("contract.json"),
+  });
+  if (reconciled?.evaluation) {
+    return {
+      spec,
+      contract,
+      execution: {
+        ...reconciled.execution,
+        finalizationState: "finalized",
+      },
+      evaluation: reconciled.evaluation,
+      statePath: stateBackend.path(),
+    };
+  }
 
   await updateLiveState(stateBackend, spec, "executing", {
     phase: "execute",
@@ -547,6 +858,16 @@ export async function resumeHarness(input: {
     executionObserver: createExecutionObserver(stateBackend, spec, contract, recorder),
   });
   const executionFile = await context.artifactStore.writeJson("execution.resume.json", execution);
+  await persistExecutionCheckpoint({
+    spec,
+    store: context.artifactStore,
+    stateBackend,
+    contract,
+    execution,
+    contractFile: context.artifactStore.resolve("contract.json"),
+    executionFile,
+    summaryPrefix: "Resume execution completed",
+  });
   if (!execution.passed) {
     const message = execution.failureReason ?? `Resume execution failed with exit code ${execution.exitCode}.`;
     await recorder.recordLifecycle({
@@ -592,6 +913,7 @@ export async function resumeHarness(input: {
   });
   const evaluation = await target.evaluate({ ...context, contract, execution });
   const evaluationFile = await context.artifactStore.writeJson("evaluation.resume.json", evaluation);
+  await scoreHarnessEvaluation(spec, context.artifactStore, evaluation);
   let completion: HarnessCompletionUpdate | null = null;
   if (evaluation.passed && target.completeWork) {
     completion = await target.completeWork({ ...context, contract, execution, evaluation });
@@ -608,64 +930,68 @@ export async function resumeHarness(input: {
       ? `Evaluation passed for ${contract.caseId}.`
       : evaluation.failureReason ?? `Evaluation failed for ${contract.caseId}.`,
   });
-  await recorder.recordLifecycle({
-    phase: "handoff",
-    lane: "handoff",
-    status: "running",
-    title: `Preparing resumed handoff for ${contract.caseId}`,
-    summary: `Preparing handoff for ${contract.caseId}.`,
-  });
-  await context.artifactStore.writeText(
-    "handoff.resume.md",
-    [
-      "# Harness Handoff",
-      "",
-      `- run_id: ${spec.runId}`,
-      `- target: ${spec.targetId}`,
-      `- adapter: ${spec.adapterId}`,
-      `- task: ${contract.caseId}`,
-      `- title: ${contract.title}`,
-      `- thread_id: ${execution.threadId ?? "n/a"}`,
-      `- execution_passed: ${execution.passed}`,
-      `- evaluation_passed: ${evaluation.passed}`,
-      `- completion_update: ${completion?.summary ?? "none"}`,
-      `- summary: ${execution.lastMessage ?? evaluation.failureReason ?? "No summary emitted."}`,
-    ].join("\n"),
-  );
-  const handoffCheckpoint = await writePhaseCheckpoint(spec, context.artifactStore, "handoff", {
-    caseId: contract.caseId,
-    title: contract.title,
-    contractFile: "contract.json",
-    executionFile: relativeToControlRepo(spec, executionFile),
-    evaluationFile: relativeToControlRepo(spec, evaluationFile),
-    threadId: execution.threadId,
-    summary: evaluation.passed
-      ? `Resumed run completed for ${contract.caseId}.`
-      : evaluation.failureReason ?? `Evaluation failed for ${contract.caseId}.`,
-  });
-  await recorder.recordLifecycle({
-    phase: "handoff",
-    lane: "handoff",
-    status: evaluation.passed ? "completed" : "failed",
-    title: evaluation.passed ? `Resumed run completed for ${contract.caseId}` : `Resumed handoff failed for ${contract.caseId}`,
-    summary: evaluation.passed
-      ? `Resumed run completed for ${contract.caseId}.`
-      : evaluation.failureReason ?? `Evaluation failed for ${contract.caseId}.`,
-  });
-  await recorder.flush();
-  await updateLiveState(stateBackend, spec, evaluation.passed ? "completed" : "failed", {
-    phase: "handoff",
-    caseId: contract.caseId,
-    title: contract.title,
-    threadId: execution.threadId,
-    summary: evaluation.passed
-      ? `Resumed run completed for ${contract.caseId}.`
-      : evaluation.failureReason ?? `Evaluation failed for ${contract.caseId}.`,
-    failureReason: evaluation.failureReason,
-    checkpointPath: relativeToControlRepo(spec, handoffCheckpoint),
+  const finalizedExecution = await finalizeRunArtifacts({
+    spec,
+    context,
+    stateBackend,
+    recorder,
+    contract,
+    execution,
+    evaluation,
+    completion,
+    contractFile: context.artifactStore.resolve("contract.json"),
+    executionFile,
+    evaluationFile,
+    resume: true,
   });
 
-  return { spec, contract, execution, evaluation, statePath: stateBackend.path() };
+  return { spec, contract, execution: finalizedExecution, evaluation, statePath: stateBackend.path() };
+}
+
+export async function reconcileHarnessRun(input: {
+  controlRepoRoot: string;
+  manifestPath?: string;
+  targetRegistryPath?: string;
+  runId: string;
+  targetId?: string | null;
+  adapterId?: string | null;
+  model?: string | null;
+}) {
+  const { spec } = await createRunSpec({
+    controlRepoRoot: input.controlRepoRoot,
+    manifestPath: input.manifestPath,
+    targetRegistryPath: input.targetRegistryPath,
+    targetId: input.targetId ?? null,
+    adapterId: input.adapterId ?? null,
+    runId: input.runId,
+    model: input.model ?? null,
+    taskId: null,
+  });
+  const context = await buildContext(spec);
+  const targetAdapter = createTarget(context);
+  const stateBackend = new JsonStateBackend(spec);
+  const contract = await context.artifactStore.readJson<SprintContract>("contract.json").catch(() => null);
+  if (!contract) {
+    return { spec, reconciled: false, execution: null, evaluation: null };
+  }
+  const recorder = new RunEventRecorder(spec, context.artifactStore);
+  await recorder.initialize({ reset: false });
+  await recorder.updateContract(contract);
+  const result = await reconcileRunArtifacts({
+    spec,
+    context,
+    targetAdapter,
+    stateBackend,
+    recorder,
+    contract,
+    contractFile: context.artifactStore.resolve("contract.json"),
+  });
+  return {
+    spec,
+    reconciled: !!result,
+    execution: result?.execution ?? null,
+    evaluation: result?.evaluation ?? null,
+  };
 }
 
 export async function evaluateHarness(input: {
@@ -695,6 +1021,7 @@ export async function evaluateHarness(input: {
   );
   const recorder = new RunEventRecorder(spec, context.artifactStore);
   await recorder.initialize({ reset: false });
+  await recorder.updateContract(contract);
   await recorder.recordLifecycle({
     phase: "evaluate",
     lane: "evaluator",
@@ -704,6 +1031,7 @@ export async function evaluateHarness(input: {
   });
   const evaluation = await target.evaluate({ ...context, contract, execution });
   const evaluationFile = await context.artifactStore.writeJson("evaluation.manual.json", evaluation);
+  await scoreHarnessEvaluation(spec, context.artifactStore, evaluation);
   await recorder.recordLifecycle({
     phase: "evaluate",
     lane: "evaluator",
