@@ -64,7 +64,7 @@
     "verify": "powershell -ExecutionPolicy Bypass -File scripts/verify.ps1"
   },
   "dependencies": {
-    "@langfuse/client": "^5.2.0",
+    "@langfuse/client": "^5.3.0",
     "@langfuse/otel": "^5.2.0",
     "@langfuse/tracing": "^5.2.0",
     "@opentelemetry/sdk-node": "^0.215.0"
